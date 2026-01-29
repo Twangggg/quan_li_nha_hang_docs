@@ -247,4 +247,55 @@ Vì dự án chia theo nhiều lớp (Domain, Infrastructure, API), việc chạ
 
 ---
 
+## 8. Hệ Thống Search, Filter & Sort Đa Năng
+
+Hệ thống hỗ trợ tìm kiếm, lọc và sắp xếp nâng cao thông qua các Extension Methods trong `QueryableExtension.cs`, giúp xử lý linh hoạt tại tầng Database (SQL).
+
+### Cách sử dụng PaginationParams
+
+Khi gửi Request từ Frontend, sử dụng các tham số sau:
+
+- **`Search`**: Tìm kiếm "global" trên nhiều cột cùng lúc.
+- **`OrderBy`**: Sắp xếp đa tầng. Dùng dấu phẩy `,` để phân cách các trường. Thêm dấu `-` phía trước để sắp xếp giảm dần (DESC).
+  - _Ví dụ:_ `orderBy=role,-createdAt` (Sắp xếp theo Role tăng dần, sau đó theo ngày tạo giảm dần).
+- **`Filters`**: Lọc chính xác theo từng trường. Dạng `key:value`.
+  - _Ví dụ:_ `filters=status:active&filters=role:manager`.
+
+### Triển khai trong Query Handler
+
+Để áp dụng cho một Query mới, thực hiện 3 bước tại Handler:
+
+```csharp
+public async Task<PagedResult<Response>> Handle(Query request, CancellationToken cancellationToken)
+{
+    var query = _unitOfWork.Repository<Employee>().Query();
+
+    // 1. Cấu hình các cột cho phép Search (Cột kiểu string)
+    var searchableFields = new List<Expression<Func<Employee, string?>>> {
+        u => u.FullName, u => u.Email, u => u.Phone
+    };
+    query = query.ApplyGlobalSearch(request.Pagination.Search, searchableFields);
+
+    // 2. Cấu hình các cột cho phép Lọc (Filter)
+    var filterMapping = new Dictionary<string, Expression<Func<Employee, object>>> {
+        { "status", u => u.Status },
+        { "role", u => u.Role }
+    };
+    query = query.ApplyFilters(request.Pagination.Filters, filterMapping);
+
+    // 3. Cấu hình các cột cho phép Sắp xếp (Sort)
+    var sortMapping = new Dictionary<string, Expression<Func<Employee, object>>> {
+        {"fullname", u => u.FullName},
+        {"createdAt", u => u.CreatedAt}
+    };
+    query = query.ApplySorting(request.Pagination.OrderBy, sortMapping, u => u.Id);
+
+    return await query
+        .ProjectTo<Response>(_mapper.ConfigurationProvider)
+        .ToPagedResultAsync(request.Pagination);
+}
+```
+
+---
+
 _Tài liệu này sẽ được cập nhật liên tục khi hệ thống phát triển._
