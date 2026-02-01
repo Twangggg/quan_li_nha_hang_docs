@@ -89,3 +89,48 @@
 
 - **Pull Request (PR)**: Mỗi PR phải được ít nhất 1 thành viên khác review trước khi merge.
 - **Unit Test**: Viết test cho các Logic nghiệp vụ phức tạp ở Service (BE) và Hooks quan trọng (FE).
+
+---
+
+## 6. Tiêu chuẩn Cơ sở dữ liệu (Database)
+
+### 6.1. Quy tắc đặt tên (Naming Convention)
+
+| Loại bảng                      | Quy tắc                    | Ví dụ                                  |
+| ------------------------------ | -------------------------- | -------------------------------------- |
+| Bảng chính                     | `snake_case`, **số nhiều** | `employees`, `orders`, `products`      |
+| Bảng trung gian (many-to-many) | `entity1_entity2`          | `user_roles`, `order_products`         |
+| Bảng log / history             | hậu tố `_logs`, `_history` | `payment_logs`, `order_status_history` |
+
+**Column Naming:**
+
+- **General**: `snake_case` (ví dụ: `full_name`, `created_at`).
+- **Primary Key**: `table_singular_id` (ví dụ: `employee_id`, `order_id`).
+- **Foreign Key**: `referenced_table_singular_id` (ví dụ: `role_id`).
+- **Boolean**: Bắt đầu bằng `is_`, `has_`, `can_` (ví dụ: `is_active`).
+- **Enum**: Lưu dạng `int` và map trong code.
+
+### 6.2. Primary & Foreign Keys
+
+- **Primary Key**: LUÔN sử dụng kiểu `UUID`, tên cột `table_singular_id`, sinh giá trị ở Backend.
+- **Foreign Key**: Bắt buộc có constraint, đặt tên theo quy tắc `fk_<table>_<column>`.
+
+### 6.3. Audit Fields & Soft Delete (BẮT BUỘC)
+
+Mọi bảng nghiệp vụ chính phải bao gồm các trường:
+
+- `created_at` (timestamp), `created_by` (uuid)
+- `updated_at` (timestamp), `updated_by` (uuid)
+- `deleted_at` (timestamp NULL) -> Hệ thống sử dụng **Soft Delete**.
+
+### 6.4. Tiêu chuẩn dữ liệu & Index
+
+- **Data Types**: ID dùng `UUID`, Text ngắn dùng `varchar(255)`, Tiền dùng `numeric(12,2)`, Ngày giờ dùng `timestamp`.
+- **Index**: LUÔN tạo index cho Foreign Key. Sử dụng `UNIQUE INDEX` cho các trường cần duy nhất (email, code).
+
+### 6.5. Nguyên tắc Migration & Security
+
+- Mọi thay đổi schema phải qua Migration, không chỉnh sửa trực tiếp DB.
+- Không chỉnh sửa Migration đã chạy trên Production.
+- **Security**: Không lưu mật khẩu/token dạng plain text, không log dữ liệu nhạy cảm.
+- **Hiệu năng**: Tránh `SELECT *`, chỉ lấy các cột cần thiết.
