@@ -298,4 +298,158 @@ public async Task<PagedResult<Response>> Handle(Query request, CancellationToken
 
 ---
 
+## 9. Hướng Dẫn Sử Dụng Các Công Nghệ Mới (Redis & Docker)
+
+### 9.1. Redis (Distributed Caching)
+
+Hệ thống sử dụng Redis để lưu cache, giúp tăng tốc độ truy xuất dữ liệu và giảm tải cho Database.
+
+**Cách kiểm tra Redis đang chạy:**
+
+1. Mở Docker Desktop hoặc Terminal.
+2. Gõ lệnh: `docker ps`. Bạn sẽ phải thấy container tên là `foodhub_redis`.
+3. Kiểm tra kết nối trong code:
+   Redis Connection String được cấu hình trong `appsettings.json` hoặc `.env`:
+   ```env
+   REDIS_CONNECTION=localhost:6379 (Local) hoặc redis:6379 (Docker)
+   ```
+
+**Cách sử dụng trong Code (IDistributedCache):**
+
+Dùng `IDistributedCache` của Microsoft để tương tác với Redis một cách trừu tượng.
+
+```csharp
+public class GetDashboardQueryHandler : IRequestHandler<GetDashboardQuery, DashboardDto>
+{
+    private readonly IDistributedCache _cache;
+    // ... constructor injection ...
+
+    public async Task<DashboardDto> Handle(...)
+    {
+        string cacheKey = "dashboard_data";
+
+        // 1. Thử lấy từ Cache
+        string? cachedData = await _cache.GetStringAsync(cacheKey);
+        if (!string.IsNullOrEmpty(cachedData))
+        {
+            return JsonConvert.DeserializeObject<DashboardDto>(cachedData);
+        }
+
+        // 2. Nếu không có, lấy từ DB
+        var data = await _getDataFromDb();
+
+        // 3. Lưu vào Cache (Set thời gian hết hạn là 10 phút)
+        var options = new DistributedCacheEntryOptions()
+            .SetAbsoluteExpiration(TimeSpan.FromMinutes(10));
+
+        await _cache.SetStringAsync(cacheKey, JsonConvert.SerializeObject(data), options);
+
+        return data;
+    }
+}
+```
+
+### 9.2. Docker & Docker Compose
+
+Dự án được đóng gói hoàn toàn bằng Docker để đảm bảo môi trường phát triển đồng nhất giữa các máy dev.
+
+**Các lệnh thường dùng:**
+
+1. **Khởi chạy toàn bộ hệ thống (DB, Redis, API, FE):**
+
+   ```bash
+   docker-compose up -d
+   ```
+
+   _`-d`: Chạy ngầm (Detached mode)._
+
+2. **Xem logs của Backend:**
+
+   ```bash
+   docker-compose logs -f backend
+   ```
+
+3. **Re-build lại Backend khi có code mới:**
+
+   ```bash
+   docker-compose up -d --build backend
+   ```
+
+4. **Tắt hệ thống:**
+   ```bash
+   docker-compose down
+   ```
+
+**Lưu ý khi dev:**
+
+- Nếu bạn chạy `dotnet run` (môi trường ngoài Docker), hãy đảm bảo `ConnectionStrings` trỏ về `localhost` thay vì tên container (ví dụ `db`, `redis` chỉ hiểu được trong mạng Docker).
+
+---
+
+## 10. Quản lý Message & Đa ngôn ngữ (Localization)
+
+Hệ thống hỗ trợ đa ngôn ngữ (Tiếng Việt mặc định) thông qua `.resx` files. Mọi thông báo trả về cho Client **KHÔNG ĐƯỢC** hard-code string mà phải dùng Resource.
+
+### 10.1. Cấu trúc Resource Files
+
+File nằm tại `Application/Resources/`:
+
+- **Messages.resx**: Chứa các thông báo thành công, thông tin chung (VD: `AccountCreatedSuccessfully`).
+- **ErrorMessages.resx**: Chứa các thông báo lỗi (VD: `EmployeeNotFound`, `InvalidPassword`).
+- Các file `.en.resx` tương ứng chứa bản dịch tiếng Anh.
+
+### 10.2. Cách thêm Message mới
+
+1. Mở file `.resx` bằng Visual Studio (hoặc editor hỗ trợ XML).
+2. Thêm **Name** (Key) và **Value** (Nội dung thông báo).
+   - _Quy tắc đặt tên:_ PascalCase.
+   - _Ví dụ:_ `UserLockedOut` -> "Tài khoản của bạn đã bị khóa."
+
+### 10.3. Cách sử dụng trong Code
+
+Sử dụng `IStringLocalizer` được inject vào Constructor.
+
+**Ví dụ trong Handler:**
+
+```csharp
+public class LoginCommandHandler : IRequestHandler<LoginCommand, Result<string>>
+{
+    // Inject Localizer cho ErrorMessages
+    private readonly IStringLocalizer<ErrorMessages> _errorLocalizer;
+    // Inject Localizer cho Messages thường (nếu cần)
+    private readonly IStringLocalizer<Messages> _localizer;
+
+    public LoginCommandHandler(
+        IStringLocalizer<ErrorMessages> errorLocalizer,
+        IStringLocalizer<Messages> localizer)
+    {
+        _errorLocalizer = errorLocalizer;
+        _localizer = localizer;
+    }
+
+    public async Task<Result<string>> Handle(...)
+    {
+        var user = await _userManager.FindByNameAsync(request.Username);
+
+        if (user == null)
+        {
+            // Lấy chuỗi lỗi từ Resource dựa trên Key "UserNotFound"
+            // Kết quả sẽ tự động theo ngôn ngữ của Request Header "Accept-Language"
+            return Result.Failure(_errorLocalizer["UserNotFound"]);
+        }
+
+        // ... logic login ...
+
+        return Result.Success(_localizer["LoginSuccess"]);
+    }
+}
+```
+
+**Lưu ý:**
+
+- Khi Client gửi request, cần kèm Header `Accept-Language: vi` hoặc `en` để nhận thông báo đúng ngôn ngữ.
+- Nếu Key không tồn tại, `IStringLocalizer` sẽ trả về chính cái Key đó.
+
+---
+
 _Tài liệu này sẽ được cập nhật liên tục khi hệ thống phát triển._
