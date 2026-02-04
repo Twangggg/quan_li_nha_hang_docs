@@ -4,13 +4,13 @@ Tài liệu này hướng dẫn cách sử dụng, cấu trúc code và cách ph
 
 ## 1. Kiến Trúc Hệ Thống (Architecture)
 
-Hệ thống được xây dựng theo kiến trúc **Clean Architecture** (hoặc Onion Architecture) kết hợp với các pattern hiện đại như **CQRS** (Command Query Responsibility Segregation).
+Hệ thống được xây dựng theo kiến trúc **Clean Architecture** kết hợp với các pattern hiện đại như **CQRS** (Command Query Responsibility Segregation).
 
 ### Các Lớp Trong Hệ Thống:
 
 - **Domain**: Chứa các thực thể (Entities), Enums, và các quy tắc nghiệp vụ cốt lõi. Không phụ thuộc vào bất kỳ thư viện ngoài nào ngoại trừ các thư viện hệ thống.
 - **Application**: Chứa logic nghiệp vụ (Services, MediatR Handlers), DTOs, Mappings, và Interfaces cho các service bên ngoài. Đây là lớp điều phối chính.
-- **Infrastructure**: Chứa các triển khai chi tiết cho việc lưu trữ (Persistence - EF Core), Security (JWT), Email, v.v.
+- **Infrastructure**: Chứa các triển khai chi tiết cho việc lưu trữ (Persistence - EF Core), Security (JWT), Email, Redis Cache, v.v.
 - **Presentation (API)**: Chứa các Controllers, Middlewares để giao tiếp với bên ngoài.
 
 ---
@@ -22,8 +22,9 @@ Hệ thống được xây dựng theo kiến trúc **Clean Architecture** (ho�
 - **Mapping**: AutoMapper
 - **Messaging**: MediatR (CQRS Pattern)
 - **Validation**: FluentValidation
-- **Logging**: Serilog (Nếu có)
-- **Documentation**: OpenAPI (Swagger)
+- **Caching**: Redis (IDistributedCache)
+- **Logging**: Serilog
+- **Documentation**: Swagger/OpenAPI
 
 ---
 
@@ -39,73 +40,97 @@ Hệ thống được xây dựng theo kiến trúc **Clean Architecture** (ho�
 ### Coding Rules
 
 - Sử dụng **File-scoped namespaces** để giảm indentation.
-- Tuân thủ **Coding_Convention_v1.0.md** đã đề ra.
 - Luôn sử dụng `async/await` cho các thao tác IO (DB, Network).
+- Tuân thủ quy tắc đặt tên: Class/Method/Property: PascalCase, Parameter/Variable: camelCase.
 
 ---
 
 ## 4. Cách Thêm Tính Năng Mới (Step-by-Step)
 
-Giả sử bạn muốn thêm tính năng "Lấy danh sách nhân viên":
+Giả sử bạn muốn thêm tính năng "Lấy danh sách sản phẩm":
 
-### Bước 1: Tạo DTO
+### Bước 1: Tạo Response DTO
 
-Tạo file `EmployeeDto.cs` trong `Application/DTOs/Employees/` (nếu chưa có).
-Sử dụng `IMapFrom<Employee>` để tự động mapping.
+Tạo file `GetMenuItemsResponse.cs` trong `Application/Features/MenuItems/Queries/GetMenuItems/`:
+Sử dụng `IMapFrom<MenuItem>` để tự động mapping.
+
+```csharp
+public class GetMenuItemsResponse : IMapFrom<MenuItem>
+{
+    public Guid MenuItemId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public decimal PriceDineIn { get; set; }
+    // ... các trường khác
+}
+```
 
 ### Bước 2: Tạo Query & Handler
 
-Tạo file `GetEmployeesQuery.cs` trong `Application/Features/Employees/Queries/`:
+Tạo file `GetMenuItemsQuery.cs` cùng thư mục:
 
 ```csharp
-public record GetEmployeesQuery : IRequest<List<EmployeeDto>>;
+public record GetMenuItemsQuery(PaginationParams Pagination) : IRequest<Result<PagedResult<GetMenuItemsResponse>>>;
 
-public class GetEmployeesQueryHandler : IRequestHandler<GetEmployeesQuery, List<EmployeeDto>>
+public class GetMenuItemsQueryHandler : IRequestHandler<GetMenuItemsQuery, Result<PagedResult<GetMenuItemsResponse>>>
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IMapper _mapper;
 
-    public GetEmployeesQueryHandler(IUnitOfWork unitOfWork, IMapper mapper)
+    public GetMenuItemsQueryHandler(IUnitOfWork unitOfWork, IMapper mapper)
     {
         _unitOfWork = unitOfWork;
         _mapper = mapper;
     }
 
-    public async Task<List<EmployeeDto>> Handle(GetEmployeesQuery request, CancellationToken cancellationToken)
+    public async Task<Result<PagedResult<GetMenuItemsResponse>>> Handle(GetMenuItemsQuery request, CancellationToken cancellationToken)
     {
-        var employees = await _unitOfWork.Repository<Employee>()
-            .Query()
-            .ToListAsync(cancellationToken);
+        var query = _unitOfWork.Repository<MenuItem>().Query();
 
-        return _mapper.Map<List<EmployeeDto>>(employees);
+        // Áp dụng search, filter, sort nếu cần (xem phần 8)
+
+        var result = await query
+            .ProjectTo<GetMenuItemsResponse>(_mapper.ConfigurationProvider)
+            .ToPagedResultAsync(request.Pagination);
+
+        return Result<PagedResult<GetMenuItemsResponse>>.Success(result);
     }
 }
 ```
 
 ### Bước 3: Tạo Controller
 
-Nên tạo một `ApiControllerBase` để dùng chung `ISender` (Mediator):
+Controllers trong project kế thừa trực tiếp từ `ControllerBase` và inject `IMediator`. Sử dụng helper method `HandleResult` để chuẩn hóa response.
 
 ```csharp
 [ApiController]
 [Route("api/[controller]")]
-public abstract class ApiControllerBase : ControllerBase
+public class MenuItemsController : ControllerBase
 {
-    private ISender _mediator = null!;
-    protected ISender Mediator => _mediator ??= HttpContext.RequestServices.GetRequiredService<ISender>();
-}
-```
+    private readonly IMediator _mediator;
+    public MenuItemsController(IMediator mediator) => _mediator = mediator;
 
-Sau đó tạo `EmployeesController.cs`:
-
-```csharp
-public class EmployeesController : ApiControllerBase
-{
-    [HttpGet]
-    public async Task<IActionResult> GetEmployees()
+    private IActionResult HandleResult<T>(Result<T> result)
     {
-        var result = await Mediator.Send(new GetEmployeesQuery());
-        return Ok(result);
+        if (result.IsSuccess)
+        {
+            if (result.HasWarning) return Ok(new { data = result.Data, warning = result.Warning });
+            return Ok(result.Data);
+        }
+
+        return result.ErrorType switch
+        {
+            ResultErrorType.NotFound => NotFound(new { message = result.Error }),
+            ResultErrorType.Unauthorized => Unauthorized(new { message = result.Error }),
+            ResultErrorType.Conflict => Conflict(new { message = result.Error }),
+            _ => BadRequest(new { message = result.Error })
+        };
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> GetMenuItems([FromQuery] PaginationParams pagination)
+    {
+        var result = await _mediator.Send(new GetMenuItemsQuery(pagination));
+        return HandleResult(result);
     }
 }
 ```
@@ -114,342 +139,101 @@ public class EmployeesController : ApiControllerBase
 
 ## 5. Các Patterns Quan Trọng
 
-### Result Pattern (Khuyến nghị)
+### Result Pattern
 
-Thay vì throw exception cho các lỗi logic, hãy dùng `Result<T>`:
+Sử dụng `Result<T>` để trả về kết quả thành công hoặc lỗi từ tầng Application.
 
-- `Result.Success(data)`
-- `Result.Failure(errors)`
+- **Thành công**: `Result<T>.Success(data)` hoặc `Result<T>.SuccessWithWarning(data, "Lưu ý...")`
+- **Thất bại**: `Result<T>.Failure("Thông báo lỗi", ResultErrorType.BadRequest)` hoặc các method shortcut như `Result<T>.NotFound("Không tìm thấy")`.
 
 ### Validation Behavior
 
-Hệ thống đã cấu hình `ValidationBehavior` trong MediatR Pipeline. Khi bạn gửi một Request (Command/Query):
+Mọi Command được gửi qua MediatR sẽ tự động được kiểm tra bởi các lớp kế thừa `AbstractValidator<T>`. Nếu có lỗi, hệ thống sẽ throw `ValidationException` và trả về mã lỗi 400.
 
-1. Pipeline sẽ tìm tất cả các class kế thừa `AbstractValidator<TRequest>`.
-2. Nếu có lỗi validation, nó sẽ throw `ValidationException`.
-3. `ExceptionMiddleware` sẽ bắt được và trả về lỗi 400 kèm chi tiết các field bị lỗi.
+### AutoMapper (IMapFrom)
 
-**Cách dùng:** Chỉ cần tạo file validator cùng thư mục với Command.
+Interface `IMapFrom<T>` giúp tự động cấu hình Mapping. Mặc định nó sẽ thực hiện `CreateMap<T, GetType>().ReverseMap()`.
 
 ```csharp
-public class CreateEmployeeCommandValidator : AbstractValidator<CreateEmployeeCommand>
+// Trong DTO
+public class MenuItemDto : IMapFrom<MenuItem> { }
+
+// Nếu cần custom mapping:
+public void Mapping(Profile profile)
 {
-    public CreateEmployeeCommandValidator()
-    {
-        RuleFor(v => v.Email).NotEmpty().EmailAddress();
-        RuleFor(v => v.Username).MinimumLength(5);
-    }
-}
-```
-
-### AutoMapper (IMapFrom Pattern)
-
-Để tránh việc phải cấu hình Mapping thủ công cho từng DTO, hệ thống sử dụng interface `IMapFrom<T>`.
-
-**Cách dùng:**
-
-- Cho mapping đơn giản (tên field giống nhau):
-
-```csharp
-public class EmployeeDto : IMapFrom<Employee> { }
-```
-
-- Cho mapping phức tạp (cần custom logic):
-
-```csharp
-public class EmployeeDto : IMapFrom<Employee>
-{
-    public string FullName { get; set; }
-    public string RoleName { get; set; }
-
-    public void Mapping(Profile profile)
-    {
-        profile.CreateMap<Employee, EmployeeDto>()
-            .ForMember(d => d.RoleName, opt => opt.MapFrom(s => s.Role.ToString()));
-    }
+    profile.CreateMap<MenuItem, MenuItemDto>()
+        .ForMember(d => d.CategoryName, opt => opt.MapFrom(s => s.Category.Name));
 }
 ```
 
 ### Unit of Work & Generic Repository
 
-Hệ thống sử dụng Unit of Work để quản lý transaction và đảm bảo tính nhất quán của dữ liệu.
+Dùng để quản lý dữ liệu và transaction.
 
-**Cách dùng trong Handler:**
-
-```csharp
-// Thêm mới
-await _unitOfWork.Repository<Employee>().AddAsync(employee);
-// Lưu thay đổi (Đây là lúc DbContext.SaveChangesAsync được gọi)
-await _unitOfWork.SaveChangeAsync(cancellationToken);
-```
-
-### Xử lý lỗi (Exception Handling)
-
-Sử dụng các Exception tùy chỉnh để `ExceptionMiddleware` có thể trả về đúng mã lỗi HTTP:
-
-- `NotFoundException("Message")` -> Trả về 404.
-- `BusinessException("Message")` -> Trả về 400.
-- Các lỗi khác -> Trả về 500.
+- `_unitOfWork.Repository<T>().Query()`: Lấy IQueryable.
+- `_unitOfWork.Repository<T>().AddAsync(entity)`: Thêm mới.
+- `_unitOfWork.SaveChangeAsync()`: Thực thi lưu xuống DB.
 
 ---
 
 ## 6. EF Core Migrations
 
-Vì dự án chia theo nhiều lớp (Domain, Infrastructure, API), việc chạy lệnh Migration cần chỉ định rõ project.
+Chạy lệnh Migration tại thư mục gốc `FoodHub_BE`:
 
-### Các lệnh cơ bản (Chạy tại thư mục gốc FoodHub_BE):
-
-1. **Thêm Migration mới:**
-
-   ```bash
-   dotnet ef migrations add [MigrationName] --project Infrastructure --startup-project .
-   ```
-
-   _(Infrastructure là nơi chứa DbContext, . là thư mục hiện tại chứa file Program.cs)_
-
-2. **Cập nhật Database:**
-
-   ```bash
-   dotnet ef database update --project Infrastructure --startup-project .
-   ```
-
-3. **Xóa Migration cuối cùng (chưa update DB):**
-
-   ```bash
-   dotnet ef migrations remove --project Infrastructure --startup-project .
-   ```
-
-4. **Tạo file Script SQL (để deploy tay):**
-   ```bash
-   dotnet ef migrations script --project Infrastructure --startup-project .
-   ```
-
-### Lưu ý quan trọng:
-
-- **Snake Case:** Database đã được cấu hình tự động chuyển từ `PascalCase` sang `snake_case`. Không cần đặt tên bảng/cột thủ công trong code.
-- **Data Seeding:** Có thể thực hiện seeding trong file `AppDbContext.cs` hoặc thông qua các class `Configuration`.
-- **Migration History:** Bảng `__EFMigrationsHistory` sẽ lưu lại các migration đã chạy, đừng xóa bảng này.
+1. **Thêm Migration:** `dotnet ef migrations add [Name] --project Infrastructure --startup-project .`
+2. **Cập nhật Database:** `dotnet ef database update --project Infrastructure --startup-project .`
+3. **Xóa Migration cuối:** `dotnet ef migrations remove --project Infrastructure --startup-project .`
 
 ---
 
 ## 7. Hướng Dẫn Chạy Project
 
-1. Cài đặt PostgreSQL và tạo database.
-2. Cập nhật `ConnectionStrings:DefaultConnection` trong `appsettings.json`.
-3. Chạy lệnh migration:
-   ```bash
-   dotnet ef database update
-   ```
-4. Run project:
-   ```bash
-   dotnet run --project FoodHub.csproj
-   ```
+1. Cấu hình Connection String trong `appsettings.json` hoặc `.env`.
+2. Đảm bảo Docker Desktop đã chạy để khởi động Redis và (tùy chọn) PostgreSQL.
+3. Chạy lệnh: `dotnet run`.
 
 ---
 
 ## 8. Hệ Thống Search, Filter & Sort Đa Năng
 
-Hệ thống hỗ trợ tìm kiếm, lọc và sắp xếp nâng cao thông qua các Extension Methods trong `QueryableExtension.cs`, giúp xử lý linh hoạt tại tầng Database (SQL).
-
-### Cách sử dụng PaginationParams
-
-Khi gửi Request từ Frontend, sử dụng các tham số sau:
-
-- **`Search`**: Tìm kiếm "global" trên nhiều cột cùng lúc.
-- **`OrderBy`**: Sắp xếp đa tầng. Dùng dấu phẩy `,` để phân cách các trường. Thêm dấu `-` phía trước để sắp xếp giảm dần (DESC).
-  - _Ví dụ:_ `orderBy=role,-createdAt` (Sắp xếp theo Role tăng dần, sau đó theo ngày tạo giảm dần).
-- **`Filters`**: Lọc chính xác theo từng trường. Dạng `key:value`.
-  - _Ví dụ:_ `filters=status:active&filters=role:manager`.
-
-### Triển khai trong Query Handler
-
-Để áp dụng cho một Query mới, thực hiện 3 bước tại Handler:
+Sử dụng `QueryableExtension.cs` để xử lý tập trung việc tìm kiếm, lọc và phân trang.
 
 ```csharp
-public async Task<PagedResult<Response>> Handle(Query request, CancellationToken cancellationToken)
-{
-    var query = _unitOfWork.Repository<Employee>().Query();
+var searchableFields = new List<Expression<Func<Employee, string?>>> {
+    u => u.FullName, u => u.Email
+};
+query = query.ApplyGlobalSearch(request.Pagination.Search, searchableFields);
 
-    // 1. Cấu hình các cột cho phép Search (Cột kiểu string)
-    var searchableFields = new List<Expression<Func<Employee, string?>>> {
-        u => u.FullName, u => u.Email, u => u.Phone
-    };
-    query = query.ApplyGlobalSearch(request.Pagination.Search, searchableFields);
+var filterMapping = new Dictionary<string, Expression<Func<Employee, object?>>> {
+    { "status", u => u.Status },
+    { "role", u => u.Role }
+};
+query = query.ApplyFilters(request.Pagination.Filters, filterMapping);
 
-    // 2. Cấu hình các cột cho phép Lọc (Filter)
-    var filterMapping = new Dictionary<string, Expression<Func<Employee, object>>> {
-        { "status", u => u.Status },
-        { "role", u => u.Role }
-    };
-    query = query.ApplyFilters(request.Pagination.Filters, filterMapping);
-
-    // 3. Cấu hình các cột cho phép Sắp xếp (Sort)
-    var sortMapping = new Dictionary<string, Expression<Func<Employee, object>>> {
-        {"fullname", u => u.FullName},
-        {"createdAt", u => u.CreatedAt}
-    };
-    query = query.ApplySorting(request.Pagination.OrderBy, sortMapping, u => u.Id);
-
-    return await query
-        .ProjectTo<Response>(_mapper.ConfigurationProvider)
-        .ToPagedResultAsync(request.Pagination);
-}
+var sortMapping = new Dictionary<string, Expression<Func<Employee, object?>>> {
+    { "fullname", u => u.FullName },
+    { "createdAt", u => u.CreatedAt }
+};
+query = query.ApplySorting(request.Pagination.OrderBy, sortMapping, u => u.Id);
 ```
 
 ---
 
-## 9. Hướng Dẫn Sử Dụng Các Công Nghệ Mới (Redis & Docker)
+## 9. Caching với Redis
 
-### 9.1. Redis (Distributed Caching)
-
-Hệ thống sử dụng Redis để lưu cache, giúp tăng tốc độ truy xuất dữ liệu và giảm tải cho Database.
-
-**Cách kiểm tra Redis đang chạy:**
-
-1. Mở Docker Desktop hoặc Terminal.
-2. Gõ lệnh: `docker ps`. Bạn sẽ phải thấy container tên là `foodhub_redis`.
-3. Kiểm tra kết nối trong code:
-   Redis Connection String được cấu hình trong `appsettings.json` hoặc `.env`:
-   ```env
-   REDIS_CONNECTION=localhost:6379 (Local) hoặc redis:6379 (Docker)
-   ```
-
-**Cách sử dụng trong Code (IDistributedCache):**
-
-Dùng `IDistributedCache` của Microsoft để tương tác với Redis một cách trừu tượng.
-
-```csharp
-public class GetDashboardQueryHandler : IRequestHandler<GetDashboardQuery, DashboardDto>
-{
-    private readonly IDistributedCache _cache;
-    // ... constructor injection ...
-
-    public async Task<DashboardDto> Handle(...)
-    {
-        string cacheKey = "dashboard_data";
-
-        // 1. Thử lấy từ Cache
-        string? cachedData = await _cache.GetStringAsync(cacheKey);
-        if (!string.IsNullOrEmpty(cachedData))
-        {
-            return JsonConvert.DeserializeObject<DashboardDto>(cachedData);
-        }
-
-        // 2. Nếu không có, lấy từ DB
-        var data = await _getDataFromDb();
-
-        // 3. Lưu vào Cache (Set thời gian hết hạn là 10 phút)
-        var options = new DistributedCacheEntryOptions()
-            .SetAbsoluteExpiration(TimeSpan.FromMinutes(10));
-
-        await _cache.SetStringAsync(cacheKey, JsonConvert.SerializeObject(data), options);
-
-        return data;
-    }
-}
-```
-
-### 9.2. Docker & Docker Compose
-
-Dự án được đóng gói hoàn toàn bằng Docker để đảm bảo môi trường phát triển đồng nhất giữa các máy dev.
-
-**Các lệnh thường dùng:**
-
-1. **Khởi chạy toàn bộ hệ thống (DB, Redis, API, FE):**
-
-   ```bash
-   docker-compose up -d
-   ```
-
-   _`-d`: Chạy ngầm (Detached mode)._
-
-2. **Xem logs của Backend:**
-
-   ```bash
-   docker-compose logs -f backend
-   ```
-
-3. **Re-build lại Backend khi có code mới:**
-
-   ```bash
-   docker-compose up -d --build backend
-   ```
-
-4. **Tắt hệ thống:**
-   ```bash
-   docker-compose down
-   ```
-
-**Lưu ý khi dev:**
-
-- Nếu bạn chạy `dotnet run` (môi trường ngoài Docker), hãy đảm bảo `ConnectionStrings` trỏ về `localhost` thay vì tên container (ví dụ `db`, `redis` chỉ hiểu được trong mạng Docker).
+Project sử dụng `IDistributedCache` để tương tác với Redis. Container được đặt tên là `foodhub_redis`.
 
 ---
 
 ## 10. Quản lý Message & Đa ngôn ngữ (Localization)
 
-Hệ thống hỗ trợ đa ngôn ngữ (Tiếng Việt mặc định) thông qua `.resx` files. Mọi thông báo trả về cho Client **KHÔNG ĐƯỢC** hard-code string mà phải dùng Resource.
+Resources nằm tại `Application/Resources/`:
 
-### 10.1. Cấu trúc Resource Files
+- `ErrorMessages.resx`: Chứa các key báo lỗi.
+- `Messages.resx`: Chứa các key thông báo thành công.
 
-File nằm tại `Application/Resources/`:
-
-- **Messages.resx**: Chứa các thông báo thành công, thông tin chung (VD: `AccountCreatedSuccessfully`).
-- **ErrorMessages.resx**: Chứa các thông báo lỗi (VD: `EmployeeNotFound`, `InvalidPassword`).
-- Các file `.en.resx` tương ứng chứa bản dịch tiếng Anh.
-
-### 10.2. Cách thêm Message mới
-
-1. Mở file `.resx` bằng Visual Studio (hoặc editor hỗ trợ XML).
-2. Thêm **Name** (Key) và **Value** (Nội dung thông báo).
-   - _Quy tắc đặt tên:_ PascalCase.
-   - _Ví dụ:_ `UserLockedOut` -> "Tài khoản của bạn đã bị khóa."
-
-### 10.3. Cách sử dụng trong Code
-
-Sử dụng `IStringLocalizer` được inject vào Constructor.
-
-**Ví dụ trong Handler:**
-
-```csharp
-public class LoginCommandHandler : IRequestHandler<LoginCommand, Result<string>>
-{
-    // Inject Localizer cho ErrorMessages
-    private readonly IStringLocalizer<ErrorMessages> _errorLocalizer;
-    // Inject Localizer cho Messages thường (nếu cần)
-    private readonly IStringLocalizer<Messages> _localizer;
-
-    public LoginCommandHandler(
-        IStringLocalizer<ErrorMessages> errorLocalizer,
-        IStringLocalizer<Messages> localizer)
-    {
-        _errorLocalizer = errorLocalizer;
-        _localizer = localizer;
-    }
-
-    public async Task<Result<string>> Handle(...)
-    {
-        var user = await _userManager.FindByNameAsync(request.Username);
-
-        if (user == null)
-        {
-            // Lấy chuỗi lỗi từ Resource dựa trên Key "UserNotFound"
-            // Kết quả sẽ tự động theo ngôn ngữ của Request Header "Accept-Language"
-            return Result.Failure(_errorLocalizer["UserNotFound"]);
-        }
-
-        // ... logic login ...
-
-        return Result.Success(_localizer["LoginSuccess"]);
-    }
-}
-```
-
-**Lưu ý:**
-
-- Khi Client gửi request, cần kèm Header `Accept-Language: vi` hoặc `en` để nhận thông báo đúng ngôn ngữ.
-- Nếu Key không tồn tại, `IStringLocalizer` sẽ trả về chính cái Key đó.
+Inject `IStringLocalizer<ErrorMessages>` để lấy chuỗi thông báo theo ngôn ngữ (dựa vào header `Accept-Language`).
 
 ---
 
-_Tài liệu này sẽ được cập nhật liên tục khi hệ thống phát triển._
+_Tài liệu này được cập nhật theo cấu trúc project hiện tại (Tháng 02/2026)._
