@@ -236,4 +236,27 @@ Inject `IStringLocalizer<ErrorMessages>` để lấy chuỗi thông báo theo ng
 
 ---
 
-_Tài liệu này được cập nhật theo cấu trúc project hiện tại (Tháng 02/2026)._
+## 11. Hướng Dẫn Chi Tiết Sử Dụng Các Công Nghệ Chính
+
+Phần này cung cấp hướng dẫn chi tiết cách sử dụng các công nghệ chính trong dự án FoodHub Backend. Mỗi công nghệ có file hướng dẫn riêng trong thư mục `FoodHub_Docs/`:
+
+- [ASP.NET Core 9.0](ASP.NET_Core_9.0.md) - Framework web chính
+- [Entity Framework Core 9.0](Entity_Framework_Core_9.0.md) - ORM cho database
+- [MediatR](MediatR.md) - CQRS pattern implementation
+- [FluentValidation](FluentValidation.md) - Validation framework
+- [AutoMapper](AutoMapper.md) - Object mapping
+- [JWT Bearer Authentication](JWT_Bearer_Authentication.md) - Authentication
+- [Serilog](Serilog.md) - Structured logging
+- [xUnit](xUnit.md) - Unit testing
+- [API Versioning](API_Versioning.md) - API versioning
+- [Response Compression](Response_Compression.md) - HTTP compression
+- [CORS](CORS.md) - Cross-origin resource sharing
+- [Localization](Localization.md) - Multi-language support
+- [Background Jobs](Background_Jobs.md) - Asynchronous tasks
+- [BCrypt](BCrypt.md) - Password hashing
+- [Rate Limiting](Rate_Limiting.md) - API protection
+- [SMTP](SMTP.md) - Email sending
+
+---
+
+_Tài liệu này được cập nhật với hướng dẫn chi tiết các công nghệ (Tháng 02/2026)._
