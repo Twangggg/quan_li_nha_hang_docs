@@ -1,262 +1,216 @@
 # Hướng Dẫn Phát Triển Backend (Backend Developer Guide)
 
-Tài liệu này hướng dẫn cách sử dụng, cấu trúc code và cách phát triển các tính năng mới cho hệ thống Backend của FoodHub.
+Tài liệu này là hướng dẫn cho lập trình viên tham gia dự án FoodHub BE. Nó mô tả chi tiết tất cả các tiêu chuẩn từ kiến trúc đến việc triển khai code thực tế.
+
+---
 
 ## 1. Kiến Trúc Hệ Thống (Architecture)
 
-Hệ thống được xây dựng theo kiến trúc **Clean Architecture** kết hợp với các pattern hiện đại như **CQRS** (Command Query Responsibility Segregation).
+Hệ thống được xây dựng theo kiến trúc **Clean Architecture** kết hợp với **CQRS** (MediatR).
 
-### Các Lớp Trong Hệ Thống:
-
-- **Domain**: Chứa các thực thể (Entities), Enums, và các quy tắc nghiệp vụ cốt lõi. Không phụ thuộc vào bất kỳ thư viện ngoài nào ngoại trừ các thư viện hệ thống.
-- **Application**: Chứa logic nghiệp vụ (Services, MediatR Handlers), DTOs, Mappings, và Interfaces cho các service bên ngoài. Đây là lớp điều phối chính.
-- **Infrastructure**: Chứa các triển khai chi tiết cho việc lưu trữ (Persistence - EF Core), Security (JWT), Email, Redis Cache, v.v.
-- **Presentation (API)**: Chứa các Controllers, Middlewares để giao tiếp với bên ngoài.
+- **Domain**: Thực thể (Entities) kế thừa `BaseEntity`, Enum và Logic lõi.
+- **Application**: Command/Query, Handlers, DTOs, Mappings, và Validation.
+- **Infrastructure**: Database, Security, Redis, external services.
+- **Presentation (WebAPI)**: Controllers và Middlewares.
 
 ---
 
 ## 2. Công Nghệ Sử Dụng (Tech Stack)
 
-- **Language**: C# 13 / .NET 9
-- **Database**: PostgreSQL (Entity Framework Core 9)
-- **Mapping**: AutoMapper
-- **Messaging**: MediatR (CQRS Pattern)
-- **Validation**: FluentValidation
-- **Caching**: Redis (IDistributedCache)
-- **Logging**: Serilog
-- **Documentation**: Swagger/OpenAPI
+Chi tiết cấu hình và hướng dẫn sử dụng từng công nghệ:
+
+### 🛠 Frameworks & Core
+
+- [ASP.NET Core 9.0](../Technologies/Frameworks/ASP.NET_Core_9.0.md)
+- [Entity Framework Core 9.0](../Technologies/Frameworks/Entity_Framework_Core_9.0.md)
+
+### 📚 Thư viện & Chức năng
+
+- [MediatR](../Technologies/Libraries/MediatR.md) | [AutoMapper](../Technologies/Libraries/AutoMapper.md) | [FluentValidation](../Technologies/Libraries/FluentValidation.md)
+- [Serilog](../Technologies/Libraries/Serilog.md) | [xUnit](../Technologies/Libraries/xUnit.md)
+- [Phân quyền (Policy-based Auth)](../Technologies/Features/Policy_based_Authorization.md)
+- [Localization](../Technologies/Features/Localization.md) | [Background Jobs](../Technologies/Features/Background_Jobs.md)
 
 ---
 
-## 3. Cấu Trúc Folder & Quy Tắc Đặt Tên
+## 3. Quy trình thêm tính năng mới (Step-by-Step)
 
-### Folder Structure
+### Bước 1: Domain
 
-- `Domain/Entities/`: Tên file PascalCase, số ít (ví dụ: `Employee.cs`).
-- `Application/Features/[FeatureName]/Commands/`: Chứa các yêu cầu thay đổi dữ liệu.
-- `Application/Features/[FeatureName]/Queries/`: Chứa các yêu cầu đọc dữ liệu.
-- `Infrastructure/Persistence/Configurations/`: Cấu hình Fluent API cho EF Core.
+Tạo Entity mới trong `Domain/Entities/`. Luôn kế thừa từ `BaseEntity`.
 
-### Coding Rules
+### Bước 2: Database
 
-- Sử dụng **File-scoped namespaces** để giảm indentation.
-- Luôn sử dụng `async/await` cho các thao tác IO (DB, Network).
-- Tuân thủ quy tắc đặt tên: Class/Method/Property: PascalCase, Parameter/Variable: camelCase.
+1. Đăng ký Entity trong `AppDbContext`.
+2. Chạy Migration: `dotnet ef migrations add [Name] -p Infrastructure -s WebAPI`.
+3. Update DB: `dotnet ef database update`.
+
+### Bước 3: Application (Trọng tâm)
+
+1. **Command/Query**: Định nghĩa request class. Nếu là danh sách, phải có `PaginationParams`.
+2. **DTO**: Tạo Response DTO và sử dụng `IMapFrom<Entity>`.
+3. **Permission**: Thêm hằng số vào `Permissions.cs` và ánh xạ trong `PermissionProvider.cs`.
+4. **Validator**: Tạo class kế thừa `AbstractValidator<T>`. Tầng MediatR sẽ tự động chạy validate này trước khi vào Handler.
+5. **Handler**: Triển khai logic nghiệp vụ.
+
+### Bước 4: Presentation
+
+Tạo Controller, kế thừa `ApiControllerBase` và sử dụng `[HasPermission]`.
 
 ---
 
-## 4. Cách Thêm Tính Năng Mới (Step-by-Step)
+## 4. "Giải phẫu" một Handler hoàn hảo
 
-Giả sử bạn muốn thêm tính năng "Lấy danh sách sản phẩm":
-
-### Bước 1: Tạo Response DTO
-
-Tạo file `GetMenuItemsResponse.cs` trong `Application/Features/MenuItems/Queries/GetMenuItems/`:
-Sử dụng `IMapFrom<MenuItem>` để tự động mapping.
+Một Handler đạt chuẩn trong FoodHub cần phối hợp nhiều service để đảm bảo tính an toàn và khả năng quan sát:
 
 ```csharp
-public class GetMenuItemsResponse : IMapFrom<MenuItem>
-{
-    public Guid MenuItemId { get; set; }
-    public string Name { get; set; } = string.Empty;
-    public decimal PriceDineIn { get; set; }
-    // ... các trường khác
-}
-```
-
-### Bước 2: Tạo Query & Handler
-
-Tạo file `GetMenuItemsQuery.cs` cùng thư mục:
-
-```csharp
-public record GetMenuItemsQuery(PaginationParams Pagination) : IRequest<Result<PagedResult<GetMenuItemsResponse>>>;
-
-public class GetMenuItemsQueryHandler : IRequestHandler<GetMenuItemsQuery, Result<PagedResult<GetMenuItemsResponse>>>
+public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, Result<Guid>>
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly IMapper _mapper;
+    private readonly ILogger<CreateOrderHandler> _logger;
+    private readonly IMessageService _messageService;
+    private readonly ICurrentUserService _currentUserService;
 
-    public GetMenuItemsQueryHandler(IUnitOfWork unitOfWork, IMapper mapper)
+    public CreateOrderHandler(...) { /* Inject all */ }
+
+    public async Task<Result<Guid>> Handle(CreateOrderCommand request, CancellationToken token)
     {
-        _unitOfWork = unitOfWork;
-        _mapper = mapper;
-    }
+        // 1. Ghi log khi bắt đầu
+        _logger.LogInformation("Creating order for table {TableId}", request.TableId);
 
-    public async Task<Result<PagedResult<GetMenuItemsResponse>>> Handle(GetMenuItemsQuery request, CancellationToken cancellationToken)
-    {
-        var query = _unitOfWork.Repository<MenuItem>().Query();
+        // 2. Lấy thông tin user hiện tại (nếu cần)
+        var userId = _currentUserService.UserId;
 
-        // Áp dụng search, filter, sort nếu cần (xem phần 8)
-
-        var result = await query
-            .ProjectTo<GetMenuItemsResponse>(_mapper.ConfigurationProvider)
-            .ToPagedResultAsync(request.Pagination);
-
-        return Result<PagedResult<GetMenuItemsResponse>>.Success(result);
-    }
-}
-```
-
-### Bước 3: Tạo Controller
-
-Controllers trong project kế thừa trực tiếp từ `ControllerBase` và inject `IMediator`. Sử dụng helper method `HandleResult` để chuẩn hóa response.
-
-```csharp
-[ApiController]
-[Route("api/[controller]")]
-public class MenuItemsController : ControllerBase
-{
-    private readonly IMediator _mediator;
-    public MenuItemsController(IMediator mediator) => _mediator = mediator;
-
-    private IActionResult HandleResult<T>(Result<T> result)
-    {
-        if (result.IsSuccess)
-        {
-            if (result.HasWarning) return Ok(new { data = result.Data, warning = result.Warning });
-            return Ok(result.Data);
+        // 3. Thực hiện logic nghiệp vụ
+        if (request.TableId == null) {
+            // Ghi log Warning khi có lỗi nghiệp vụ (không phải Exception)
+            _logger.LogWarning("Create order failed: TableId is null");
+            return Result<Guid>.Failure(_messageService.GetMessage(MessageKeys.Order.SelectTable), ResultErrorType.BadRequest);
         }
 
-        return result.ErrorType switch
-        {
-            ResultErrorType.NotFound => NotFound(new { message = result.Error }),
-            ResultErrorType.Unauthorized => Unauthorized(new { message = result.Error }),
-            ResultErrorType.Conflict => Conflict(new { message = result.Error }),
-            _ => BadRequest(new { message = result.Error })
-        };
-    }
+        // 4. Sử dụng UnitOfWork & Repository
+        var order = _mapper.Map<Order>(request);
+        await _unitOfWork.Repository<Order>().AddAsync(order);
+        await _unitOfWork.SaveChangeAsync(token);
 
-    [HttpGet]
-    public async Task<IActionResult> GetMenuItems([FromQuery] PaginationParams pagination)
-    {
-        var result = await _mediator.Send(new GetMenuItemsQuery(pagination));
-        return HandleResult(result);
+        // 5. Trả về Result thành công
+        return Result<Guid>.Success(order.OrderId);
     }
 }
 ```
 
 ---
 
-## 5. Các Patterns Quan Trọng
+## 5. Persistence - IUnitOfWork & Generic Repository
 
-### Result Pattern
+Dùng để quản lý dữ liệu và transaction một cách nhất quán.
 
-Sử dụng `Result<T>` để trả về kết quả thành công hoặc lỗi từ tầng Application.
+### 5.1. Transaction Management
 
-- **Thành công**: `Result<T>.Success(data)` hoặc `Result<T>.SuccessWithWarning(data, "Lưu ý...")`
-- **Thất bại**: `Result<T>.Failure("Thông báo lỗi", ResultErrorType.BadRequest)` hoặc các method shortcut như `Result<T>.NotFound("Không tìm thấy")`.
-
-### Validation Behavior
-
-Mọi Command được gửi qua MediatR sẽ tự động được kiểm tra bởi các lớp kế thừa `AbstractValidator<T>`. Nếu có lỗi, hệ thống sẽ throw `ValidationException` và trả về mã lỗi 400.
-
-### AutoMapper (IMapFrom)
-
-Interface `IMapFrom<T>` giúp tự động cấu hình Mapping. Mặc định nó sẽ thực hiện `CreateMap<T, GetType>().ReverseMap()`.
+Khi luồng nghiệp vụ ảnh hưởng đến nhiều bảng hoặc cần tính toàn vẹn cao (vd: `CreateEmployee`), hãy sử dụng Transaction:
 
 ```csharp
-// Trong DTO
-public class MenuItemDto : IMapFrom<MenuItem> { }
+await _unitOfWork.BeginTransactionAsync();
+try {
+    // 1. Thêm dữ liệu vào nhiều bảng
+    await _unitOfWork.Repository<Employee>().AddAsync(employee);
+    await _unitOfWork.Repository<AuditLog>().AddAsync(auditLog);
 
-// Nếu cần custom mapping:
-public void Mapping(Profile profile)
-{
-    profile.CreateMap<MenuItem, MenuItemDto>()
-        .ForMember(d => d.CategoryName, opt => opt.MapFrom(s => s.Category.Name));
+    // 2. Lưu thay đổi vào DB trước khi commit
+    await _unitOfWork.SaveChangeAsync(ct);
+
+    // 3. Commit
+    await _unitOfWork.CommitTransactionAsync();
+} catch (Exception) {
+    // 4. Rollback nếu có lỗi
+    await _unitOfWork.RollbackTransactionAsync();
+    throw;
 }
 ```
 
-### Unit of Work & Generic Repository
+---
 
-Dùng để quản lý dữ liệu và transaction.
+## 6. Caching - ICacheService (Redis)
 
-- `_unitOfWork.Repository<T>().Query()`: Lấy IQueryable.
-- `_unitOfWork.Repository<T>().AddAsync(entity)`: Thêm mới.
-- `_unitOfWork.SaveChangeAsync()`: Thực thi lưu xuống DB.
+Dự án sử dụng Redis để tăng tốc độ truy xuất dữ liệu danh sách hoặc dữ liệu ít thay đổi.
+
+- **Quy tắc đặt Key**: `feature:sub-feature:id` (Ví dụ: `employee:list:p1`, `menu:detail:guid`).
+- **Invalidation (Xóa cache)**: Khi dữ liệu bị thay đổi (Create/Update/Delete), phải xóa cache liên quan.
+  - Sử dụng `RemoveByPatternAsync("feature:*")` để xóa hàng loạt key có chung tiền tố.
+- **Serialization**: `ICacheService` tự động xử lý JSON Serialization cho bạn.
 
 ---
 
-## 6. EF Core Migrations
+## 7. Security - Phân Quyền (Authorization)
 
-Chạy lệnh Migration tại thư mục gốc `FoodHub_BE`:
+Hệ thống sử dụng **Policy-based Authorization**.
 
-1. **Thêm Migration:** `dotnet ef migrations add [Name] --project Infrastructure --startup-project .`
-2. **Cập nhật Database:** `dotnet ef database update --project Infrastructure --startup-project .`
-3. **Xóa Migration cuối:** `dotnet ef migrations remove --project Infrastructure --startup-project .`
-
----
-
-## 7. Hướng Dẫn Chạy Project
-
-1. Cấu hình Connection String trong `appsettings.json` hoặc `.env`.
-2. Đảm bảo Docker Desktop đã chạy để khởi động Redis và (tùy chọn) PostgreSQL.
-3. Chạy lệnh: `dotnet run`.
+- **Attribute**: `[HasPermission(Permissions.Orders.Create)]`.
+- **Cơ chế**: `PermissionPolicyProvider` tự động tạo Policy -> `PermissionHandler` kiểm tra Claim "Permission" trong Token.
+- **Tài liệu chi tiết**: [Policy-based Authorization](../Technologies/Features/Policy_based_Authorization.md).
 
 ---
 
-## 8. Hệ Thống Search, Filter & Sort Đa Năng
+## 8. Logging & Observability
 
-Sử dụng `QueryableExtension.cs` để xử lý tập trung việc tìm kiếm, lọc và phân trang.
+Chuẩn hóa việc ghi log để dễ dàng truy vết lỗi:
 
-```csharp
-var searchableFields = new List<Expression<Func<Employee, string?>>> {
-    u => u.FullName, u => u.Email
-};
-query = query.ApplyGlobalSearch(request.Pagination.Search, searchableFields);
-
-var filterMapping = new Dictionary<string, Expression<Func<Employee, object?>>> {
-    { "status", u => u.Status },
-    { "role", u => u.Role }
-};
-query = query.ApplyFilters(request.Pagination.Filters, filterMapping);
-
-var sortMapping = new Dictionary<string, Expression<Func<Employee, object?>>> {
-    { "fullname", u => u.FullName },
-    { "createdAt", u => u.CreatedAt }
-};
-query = query.ApplySorting(request.Pagination.OrderBy, sortMapping, u => u.Id);
-```
+- **LogInformation**: Cho các bước quan trọng trong luồng ("Starting process...", "Success...").
+- **LogWarning**: Cho các vi phạm quy tắc nghiệp vụ (Dữ liệu không hợp lệ, không tìm thấy).
+- **Audit Logging**: Luôn ghi lại "ai đã làm gì" vào bảng `AuditLog` cho các thao tác thay đổi dữ liệu nhạy cảm.
 
 ---
 
-## 9. Caching với Redis
+## 9. Localization & Messaging
 
-Project sử dụng `IDistributedCache` để tương tác với Redis. Container được đặt tên là `foodhub_redis`.
-
----
-
-## 10. Quản lý Message & Đa ngôn ngữ (Localization)
-
-Resources nằm tại `Application/Resources/`:
-
-- `ErrorMessages.resx`: Chứa các key báo lỗi.
-- `Messages.resx`: Chứa các key thông báo thành công.
-
-Inject `IStringLocalizer<ErrorMessages>` để lấy chuỗi thông báo theo ngôn ngữ (dựa vào header `Accept-Language`).
+- **IMessageService**: Dùng `GetMessage(key)` để lấy nội dung từ resource file.
+- **MessageKeys**: Tuyệt đối không hardcode chuỗi thông báo. Sử dụng hằng số trong `MessageKeys`.
 
 ---
 
-## 11. Hướng Dẫn Chi Tiết Sử Dụng Các Công Nghệ Chính
+## 10. Hệ Thống Search, Filter, Sort & Phân Trang
 
-Phần này cung cấp hướng dẫn chi tiết cách sử dụng các công nghệ chính trong dự án FoodHub Backend. Mỗi công nghệ có file hướng dẫn riêng trong thư mục `FoodHub_Docs/`:
-
-- [ASP.NET Core 9.0](ASP.NET_Core_9.0.md) - Framework web chính
-- [Entity Framework Core 9.0](Entity_Framework_Core_9.0.md) - ORM cho database
-- [MediatR](MediatR.md) - CQRS pattern implementation
-- [FluentValidation](FluentValidation.md) - Validation framework
-- [AutoMapper](AutoMapper.md) - Object mapping
-- [JWT Bearer Authentication](JWT_Bearer_Authentication.md) - Authentication
-- [Serilog](Serilog.md) - Structured logging
-- [xUnit](xUnit.md) - Unit testing
-- [API Versioning](API_Versioning.md) - API versioning
-- [Response Compression](Response_Compression.md) - HTTP compression
-- [CORS](CORS.md) - Cross-origin resource sharing
-- [Localization](Localization.md) - Multi-language support
-- [Background Jobs](Background_Jobs.md) - Asynchronous tasks
-- [BCrypt](BCrypt.md) - Password hashing
-- [Rate Limiting](Rate_Limiting.md) - API protection
-- [SMTP](SMTP.md) - Email sending
+Dự án cung cấp bộ công cụ mạnh mẽ qua `QueryableExtension.cs`.
+Sử dụng `ToPagedResultAsync<T>` để tự động đếm và lấy dữ liệu theo trang.
 
 ---
 
-_Tài liệu này được cập nhật với hướng dẫn chi tiết các công nghệ (Tháng 02/2026)._
+## 11. Checklist PR "Thần Thánh" (The Ultimate Checklist)
+
+Một lập trình viên chuyên nghiệp tại FoodHub phải vượt qua checklist này trước khi gửi PR:
+
+### 🛠 Thiết kế & Cấu trúc
+
+- [ ] Entity đã kế thừa `BaseEntity` (Id, CreatedAt, UpdatedAt)?
+- [ ] Đã định nghĩa Permission mới trong `Permissions.cs`?
+- [ ] Permission mới đã được ánh xạ vào Role thích hợp trong `PermissionProvider` chưa?
+
+### 💻 Triển khai (Handler)
+
+- [ ] Đã Inject đúng các service cần thiết (`IUnitOfWork`, `ILogger`, `IMessageService`)?
+- [ ] Các thông báo lỗi/thành công đã qua `IMessageService` (không hardcode)?
+- [ ] Luồng có nhiều bảng đã được bọc trong `BeginTransactionAsync` chưa?
+- [ ] Đã gọi `SaveChangeAsync` trước khi `CommitTransaction`?
+- [ ] Nếu là Query danh sách, đã dùng `ToPagedResultAsync`?
+
+### 🔒 Bảo mật & Dữ liệu
+
+- [ ] Controller đã có `[HasPermission]` cho endpoint mới?
+- [ ] Đã xử lý xóa Cache (`RemoveAsync` hoặc `RemoveByPatternAsync`) khi dữ liệu thay đổi?
+- [ ] Đã ghi `AuditLog` cho các thao tác quan trọng?
+
+### 👁️ Khả năng quan sát (Observability)
+
+- [ ] Có `LogInformation` khi bắt đầu và kết thúc Handler?
+- [ ] Có `LogWarning` khi trả về `Result.Failure` (kèm theo lý do và ID liên quan)?
+- [ ] Tuyệt đối không log dữ liệu nhạy cảm (Password, Token).
+
+### 🧪 Hoàn thiện
+
+- [ ] Đã chạy `dotnet build` và không có lỗi/cảnh báo?
+- [ ] Đã viết/cập nhật Unit Test phủ các trường hợp thành công và thất bại chính?
+
+---
+
+_Cập nhật bởi ToanTK (Tháng 02/2026)._
