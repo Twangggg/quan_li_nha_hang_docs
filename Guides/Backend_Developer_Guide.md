@@ -48,14 +48,20 @@ Tạo Entity mới trong `Domain/Entities/`. Luôn kế thừa từ `BaseEntity`
 ### Bước 3: Application (Trọng tâm)
 
 1. **Command/Query**: Định nghĩa request class. Nếu là danh sách, phải có `PaginationParams`.
-2. **DTO**: Tạo Response DTO và sử dụng `IMapFrom<Entity>`.
+2. **DTO**: Tạo Response DTO.
+   - Dùng `IMapFrom<Entity>` cho các DTO đơn dụng.
+   - Nếu cần map thủ công hoặc cấu hình phức tạp, ghi đè method `Mapping(Profile profile)`.
 3. **Permission**: Thêm hằng số vào `Permissions.cs` và ánh xạ trong `PermissionProvider.cs`.
-4. **Validator**: Tạo class kế thừa `AbstractValidator<T>`. Tầng MediatR sẽ tự động chạy validate này trước khi vào Handler.
-5. **Handler**: Triển khai logic nghiệp vụ.
+4. **Validator**: Tạo class kế thừa `AbstractValidator<T>`. Tầng MediatR (`ValidationBehavior`) sẽ tự động chạy validate này.
+5. **Handler**: Triển khai logic điều phối (Orchestration). **Lưu ý**: Logic nghiệp vụ quan trọng nên đẩy vào Domain Entity.
 
-### Bước 4: Presentation
+### Bước 4: Presentation (WebAPI)
 
-Tạo Controller, kế thừa `ApiControllerBase` và sử dụng `[HasPermission]`.
+1. **Controller**: Kế thừa `ApiControllerBase`.
+2. **API Documentation**:
+   - Viết XML Comments (`/// <summary>`, `<param>`, `<response>`).
+   - Dùng `[ProducesResponseType]` để Swagger hiển thị rõ các schema trả về.
+   - Dùng `[HasPermission]` cho các endpoint cần bảo mật.
 
 ---
 
@@ -76,29 +82,48 @@ public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, Result<Gui
 
     public async Task<Result<Guid>> Handle(CreateOrderCommand request, CancellationToken token)
     {
-        // 1. Ghi log khi bắt đầu
         _logger.LogInformation("Creating order for table {TableId}", request.TableId);
 
-        // 2. Lấy thông tin user hiện tại (nếu cần)
+        // 1. Kiểm tra User & Authentication
         var userId = _currentUserService.UserId;
 
-        // 3. Thực hiện logic nghiệp vụ
-        if (request.TableId == null) {
-            // Ghi log Warning khi có lỗi nghiệp vụ (không phải Exception)
-            _logger.LogWarning("Create order failed: TableId is null");
-            return Result<Guid>.Failure(_messageService.GetMessage(MessageKeys.Order.SelectTable), ResultErrorType.BadRequest);
-        }
-
-        // 4. Sử dụng UnitOfWork & Repository
+        // 2. Map & Logic nghiệp vụ (Rich Domain Model)
+        // Thay vì viết logic kiểm tra Table bận/rảnh ở đây, hãy để Entity/Service xử lý
         var order = _mapper.Map<Order>(request);
+
+        // 3. Persist dữ liệu
         await _unitOfWork.Repository<Order>().AddAsync(order);
         await _unitOfWork.SaveChangeAsync(token);
 
-        // 5. Trả về Result thành công
+        // 4. Invalidate Cache
+        // await _cacheService.RemoveByPatternAsync(CacheKey.OrderList);
+
         return Result<Guid>.Success(order.OrderId);
     }
 }
 ```
+
+---
+
+## 5. Domain Logic & Rich Domain Model
+
+Tuyệt đối tránh **Anemic Domain Model** (Entity chỉ có getter/setter).
+
+- **Entity**: Chứa logic thay đổi trạng thái và validate tính nhất quán của dữ liệu.
+- **Handler**: Chỉ gọi các phương thức từ Entity và lưu xuống Database.
+
+**Ví dụ trong `Order.cs`**:
+
+```csharp
+public DomainResult Cancel() {
+    if (Status != OrderStatus.Serving) return DomainResult.Failure(DomainErrors.Order.InvalidStatus);
+    Status = OrderStatus.Cancelled;
+    CancelledAt = DateTime.UtcNow;
+    return DomainResult.Success();
+}
+```
+
+In Handler: `var result = order.Cancel(); if (!result.IsSuccess) return Result.Failure(...);`
 
 ---
 
@@ -171,8 +196,51 @@ Chuẩn hóa việc ghi log để dễ dàng truy vết lỗi:
 
 ## 10. Hệ Thống Search, Filter, Sort & Phân Trang
 
-Dự án cung cấp bộ công cụ mạnh mẽ qua `QueryableExtension.cs`.
-Sử dụng `ToPagedResultAsync<T>` để tự động đếm và lấy dữ liệu theo trang.
+Sử dụng `QueryableExtension.cs` để xử lý list linh hoạt:
+
+```csharp
+var query = _unitOfWork.Repository<Entity>().Query();
+
+// 1. Search (Global)
+query = query.ApplyGlobalSearch(request.Pagination.Search, new List<Expression<Func<Entity, string?>>> { x => x.Name });
+
+// 2. Filter (Specific fields)
+query = query.ApplyFilters(request.Pagination.Filters, new Dictionary<string, Expression<Func<Entity, object?>>> {
+    { "status", x => x.Status }
+});
+
+// 3. Sort & Paginate
+var pagedResult = await query
+    .ProjectTo<ResponseDto>(_mapper.ConfigurationProvider) // Tối ưu SQL
+    .ApplySorting(request.Pagination.OrderBy, sortMapping, defaultSort)
+    .ToPagedResultAsync(request.Pagination);
+```
+
+---
+
+## 11. Tài liệu API (API Documentation Standards)
+
+Để có Swagger đẹp và dễ dùng cho Frontend:
+
+1. **XML Comments**: Bắt buộc cho mọi Public Action.
+2. **ProducesResponseType**: Khai báo rõ kiểu trả về cho từng mã lỗi.
+3. **HandleResult**: Sử dụng helper trong `ApiControllerBase` để tự động hóa map mã lỗi.
+
+```csharp
+/// <summary>
+/// Lấy thông tin chi tiết một món ăn.
+/// </summary>
+/// <param name="id">ID món ăn.</param>
+/// <response code="200">Thành công.</response>
+/// <response code="404">Không tìm thấy.</response>
+[HttpGet("{id}")]
+[ProducesResponseType(typeof(Result<MenuItemDto>), StatusCodes.Status200OK)]
+public async Task<IActionResult> GetById(Guid id)
+{
+    var result = await _mediator.Send(new GetMenuItemByIdQuery(id));
+    return HandleResult(result);
+}
+```
 
 ---
 
