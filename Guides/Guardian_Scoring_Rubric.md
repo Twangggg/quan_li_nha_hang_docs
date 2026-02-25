@@ -1,4 +1,4 @@
-# Guardian Scoring Rubric v1.0
+# Guardian Scoring Rubric v2.0
 
 ## Mục đích
 
@@ -109,19 +109,39 @@ Tài liệu này định nghĩa cách tính điểm Compliance, các ngưỡng p
 | PERF-4: Projection .Select()       | 10  | MEDIUM           | Dùng .Select() thay vì load toàn Entity           |
 | PERF-5: Không SELECT \*            | 10  | MEDIUM           | Chỉ lấy columns cần thiết                         |
 
+### FFA-ERR (Error Handling) — 100 điểm
+
+| Rule                                | Max | Severity nếu = 0 | Điều kiện đạt điểm tối đa                                           |
+| ----------------------------------- | --- | ---------------- | ------------------------------------------------------------------- |
+| ERR-1: Custom Exception             | 25  | CRITICAL         | Dùng BusinessException/NotFoundException, không throw raw Exception |
+| ERR-2: ExceptionMiddleware Coverage | 25  | CRITICAL         | Mọi exception type đều có mapping trong middleware                  |
+| ERR-3: No Stack Trace in Production | 20  | CRITICAL         | Production response không chứa stack trace, internal detail         |
+| ERR-4: Consistent ErrorResponse     | 15  | HIGH             | Mọi exception trả về dạng ErrorResponse(statusCode, message)        |
+| ERR-5: No Handler Catch-All         | 15  | HIGH             | Handler không catch tổng quát rồi swallow — để middleware xử lý     |
+
+### FFA-TST (Backend Test Compliance) — 100 điểm
+
+| Rule                           | Max | Severity nếu = 0 | Điều kiện đạt điểm tối đa                               |
+| ------------------------------ | --- | ---------------- | ------------------------------------------------------- |
+| TST-1: Test file tồn tại       | 25  | CRITICAL         | Command Handler có {HandlerName}Tests.cs tương ứng      |
+| TST-2: Happy Path test         | 25  | CRITICAL         | Có ít nhất 1 test cho success scenario chính            |
+| TST-3: Error Path test         | 20  | HIGH             | Test cho validation fail, not found, business rule fail |
+| TST-4: Mock pattern            | 15  | HIGH             | Mock interface (IUnitOfWork), không mock concrete class |
+| TST-5: AAA + Assertion quality | 15  | MEDIUM           | Arrange-Act-Assert rõ ràng, assertion có ý nghĩa        |
+
 ---
 
 ## FGO Overall Score Formula
 
 ```
 Command Handler:
-  Overall = (FLW_score × 0.30) + (TXG_score × 0.30) + (LOG_score × 0.20) + (CAG_score × 0.20)
+  Overall = (FLW_score × 0.25) + (TXG_score × 0.25) + (LOG_score × 0.15) + (CAG_score × 0.15) + (ERR_score × 0.10) + (TST_score × 0.10)
 
 Query Handler:
-  Overall = (FLW_score × 0.30) + (LOG_score × 0.20) + (PERF_score × 0.25) + (CAG_score × 0.25)
+  Overall = (FLW_score × 0.25) + (LOG_score × 0.15) + (PERF_score × 0.20) + (CAG_score × 0.20) + (TST_score × 0.20)
 
 Controller:
-  Overall = (CTL_score × 0.40) + (SEC_score × 0.35) + (ACV_score × 0.25)
+  Overall = (CTL_score × 0.35) + (SEC_score × 0.30) + (ACV_score × 0.20) + (ERR_score × 0.15)
 
 Mixed/PR:
   Overall = Average(all applicable file scores)
@@ -143,4 +163,92 @@ Mixed/PR:
 
 ---
 
-_Rubric version 1.0 — FoodHub Guardian System. Cập nhật khi có skill version mới._
+_Rubric version 2.0 — FoodHub Guardian System. Cập nhật khi có skill version mới._
+
+---
+
+## FFO Overall Score Formula (Frontend)
+
+```
+Component Review:
+  Overall = (CMP_score × 0.35) + (PERF_score × 0.25) + (STR_score × 0.25) + (TST_score × 0.15)
+
+Page Review:
+  Overall = (CMP_score × 0.30) + (PERF_score × 0.25) + (STR_score × 0.35) + (TST_score × 0.10)
+
+Service Review:
+  Overall = (API_score × 0.70) + (TST_score × 0.30)
+
+Hook Review:
+  Overall = (API_score × 0.40) + (PERF_score × 0.30) + (TST_score × 0.30)
+
+Auth Review:
+  Overall = SEC_score × 1.00
+
+Full Feature PR:
+  Overall = (CMP_score × 0.20) + (API_score × 0.20) + (SEC_score × 0.20) + (PERF_score × 0.15) + (STR_score × 0.10) + (TST_score × 0.15)
+```
+
+---
+
+## Per-Skill Scoring Rubrics (Frontend)
+
+### FFE-CMP (Component Standard) — 100 điểm
+
+| Rule                          | Max | Severity nếu = 0 | Điều kiện đạt điểm tối đa                             |
+| ----------------------------- | --- | ---------------- | ----------------------------------------------------- |
+| CMP-1: Single Responsibility  | 25  | HIGH             | Component không quá 1 responsibility                  |
+| CMP-2: Props TypeScript type  | 25  | CRITICAL         | Props có interface/type rõ ràng, không dùng `any`     |
+| CMP-3: Client/Server boundary | 20  | HIGH             | `"use client"` chỉ khi thực sự cần hook/event handler |
+| CMP-4: Component placement    | 15  | MEDIUM           | Reusable component trong `src/components/`            |
+| CMP-5: Naming convention      | 15  | LOW              | PascalCase.tsx cho file, kebab-case cho folder        |
+
+### FFE-API (API Integration) — 100 điểm
+
+| Rule                            | Max | Severity nếu = 0 | Điều kiện đạt điểm tối đa                                   |
+| ------------------------------- | --- | ---------------- | ----------------------------------------------------------- |
+| API-1: Service layer only       | 30  | CRITICAL         | API call trong `src/services/`, không fetch trong component |
+| API-2: TypeScript response type | 25  | CRITICAL         | Response có type rõ ràng, không dùng `any`                  |
+| API-3: Error handling           | 20  | HIGH             | try-catch hoặc .catch() cho mọi API call                    |
+| API-4: Form validation          | 15  | HIGH             | Zod/Yup validate trước khi submit                           |
+| API-5: Loading/Error state      | 10  | MEDIUM           | UI hiển thị loading và error cho user                       |
+
+### FFE-SEC (Frontend Security) — 100 điểm
+
+| Rule                             | Max | Severity nếu = 0 | Điều kiện đạt điểm tối đa                              |
+| -------------------------------- | --- | ---------------- | ------------------------------------------------------ |
+| FSEC-1: No localStorage token    | 30  | CRITICAL         | Token/session dùng HttpOnly Cookie, không localStorage |
+| FSEC-2: No console.log sensitive | 25  | CRITICAL         | Không console.log token, user data, password           |
+| FSEC-3: Route guard              | 20  | CRITICAL         | Protected route có middleware redirect                 |
+| FSEC-4: No exposed secrets       | 15  | CRITICAL         | NEXT*PUBLIC* không chứa secret/key                     |
+| FSEC-5: Input sanitization       | 10  | HIGH             | URL params được sanitize trước khi render              |
+
+### FFE-PERF (Frontend Performance) — 100 điểm
+
+| Rule                            | Max | Severity nếu = 0 | Điều kiện đạt điểm tối đa                          |
+| ------------------------------- | --- | ---------------- | -------------------------------------------------- |
+| FPERF-1: Server Component fetch | 25  | HIGH             | Data fetch trong Server Component, không useEffect |
+| FPERF-2: No N+1 FE              | 25  | HIGH             | Không có API call trong loop                       |
+| FPERF-3: next/image             | 20  | MEDIUM           | Dùng `next/image` thay vì `<img>` tag              |
+| FPERF-4: useMemo                | 15  | MEDIUM           | Expensive computation có useMemo                   |
+| FPERF-5: useCallback            | 15  | LOW              | Callback prop có useCallback                       |
+
+### FFE-STR (Project Structure) — 100 điểm
+
+| Rule                             | Max | Severity nếu = 0 | Điều kiện đạt điểm tối đa                              |
+| -------------------------------- | --- | ---------------- | ------------------------------------------------------ |
+| STR-1: app/ routing only         | 25  | HIGH             | `app/` không chứa component logic > 50 lines           |
+| STR-2: Naming convention         | 20  | MEDIUM           | PascalCase.tsx, useXxx.ts, kebab-case folder           |
+| STR-3: Types in src/types/       | 20  | MEDIUM           | Types/interfaces không inline trong component          |
+| STR-4: Services in src/services/ | 20  | HIGH             | Service functions không đặt trong app/ hay components/ |
+| STR-5: No circular imports       | 15  | HIGH             | Components không import từ app/                        |
+
+### FFE-TST (Frontend Test Compliance) — 100 điểm
+
+| Rule                             | Max | Severity nếu = 0 | Điều kiện đạt điểm tối đa                             |
+| -------------------------------- | --- | ---------------- | ----------------------------------------------------- |
+| FTST-1: Test file tồn tại        | 25  | HIGH             | Feature component có {Name}.test.tsx tương ứng        |
+| FTST-2: Render test              | 25  | HIGH             | Test verify component hiển thị đúng content           |
+| FTST-3: Interaction test         | 20  | HIGH             | Test verify click, submit, input change đúng behavior |
+| FTST-4: User-centric queries     | 15  | MEDIUM           | Dùng getByRole/getByText, không querySelector         |
+| FTST-5: Error/Loading state test | 15  | MEDIUM           | Test error state và loading state (nếu có API call)   |
