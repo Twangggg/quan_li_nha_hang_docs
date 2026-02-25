@@ -1,270 +1,307 @@
-# **USER STORY — KDS (Kitchen Display System) (Sprint II)**
+# **USER STORY — KDS (Kitchen Display System)**
 
-## **1. Tổng quan & Bối cảnh (Overview & Context)**
+## **Sprint II**
 
-### **Vấn đề (Problem)**
+# **1. Tổng quan & Bối cảnh (Overview & Context)**
 
-Nhà hàng cần KDS để:
+## **1.1 Vấn đề (Problem)**
 
-- Nhận ticket/order từ Ordering System sau khi submit.
+Khi FOH (Ordering System) gửi món xuống bếp, hệ thống cần một cơ chế hiển thị và xử lý tập trung để:
 
-- Hiển thị danh sách **order** theo 2 station chính:
-  - **Kitchen (Hot + Cold chung một màn)**
+- Nhận **OrderItem** khi Order được submit
 
-  - **Bar (màn riêng)**
+- Hiển thị theo đúng station (Kitchen / Bar)
 
-- Xử lý theo cơ chế hàng đợi ưu tiên (priority queue) và giới hạn số order đang **COOKING** để tránh quá tải.
+- Sắp xếp queue theo priority
 
-- Cập nhật trạng thái **order** realtime về FOH.
+- Giới hạn số lượng **OrderItem đang COOKING**
 
-### **Pain Points hiện tại**
+- Đồng bộ trạng thái realtime về FOH
 
-- Bếp nhận thông tin chậm/không nhất quán.
+- Ghi audit log cho các thao tác BOH
 
-- Không có thứ tự ưu tiên rõ ràng (VIP/đặt trước/món lâu).
+## **1.2 Pain Points**
 
-- Dễ quá tải nếu nhận quá nhiều order đang nấu.
+- Bếp nhận thông tin chậm hoặc thiếu nhất quán
 
-- Thiếu log khi reject do thiếu nguyên liệu/sự cố.
+- Không có cơ chế ưu tiên rõ ràng (VIP / đặt trước / món lâu)
 
-### **Giá trị Nghiệp vụ (Business Value)**
+- Dễ quá tải khi quá nhiều món cùng lúc
 
-- Bếp vận hành mượt: queue ưu tiên + WIP limit.
+- Thiếu log khi từ chối món do sự cố
 
-- Giảm sót món: Kitchen/Bar nhìn đúng phần món thuộc station của mình.
+## **1.3 Business Value**
 
-- Minh bạch xử lý sự cố: reject bắt buộc lý do + có log.
+- Vận hành mượt nhờ queue ưu tiên + WIP limit
 
-- Đồng bộ tốt: FOH thấy trạng thái order realtime.
+- Giảm sót món nhờ station routing rõ ràng
 
-## **2. Đối tượng (Actor)**
+- Minh bạch khi reject (bắt buộc reason)
 
-### **Primary Actors**
+- FOH theo dõi trạng thái món realtime
 
-- **Chef (Kitchen):** xem queue Kitchen, xử lý và cập nhật trạng thái.
+# **2. Đối tượng (Actors)**
 
-- **Bartender (Bar):** xem queue Bar, xử lý và cập nhật trạng thái.
+## **Primary Actors**
 
-- **Chef-Bar:** có quyền **REJECTED** khi đang COOKING (bắt buộc lý do).
+- **Chef (Kitchen)**: xử lý món thuộc Kitchen
 
-- **Manager:** can thiệp REJECTED → PREPARING, xem log vận hành.
+- **Bartender (Bar)**: xử lý món thuộc Bar
 
-### **Secondary Actor**
+- **Chef-Bar**: có quyền REJECTED
 
-- **Ordering System (FOH):** gửi ticket xuống KDS và nhận trạng thái trả về để hiển thị FOH.
+- **Manager**: can thiệp REJECTED → PREPARING, xem log
 
-## **3. User Story Statement**
+## **Secondary Actor**
 
-Là Chef/Bar/Manager, tôi muốn KDS nhận ticket theo station (Kitchen/Bar), sắp hàng đợi ưu tiên, giới hạn số order đang COOKING, và cập nhật trạng thái order (COOKING/READY/REJECTED) realtime để tối ưu vận hành bếp/bar và đồng bộ phục vụ.
+- **Ordering System (FOH)**: gửi OrderItem và nhận trạng thái cập nhật
 
-## **4. Trạng thái Order (Order Status) — góc nhìn BOH (Order-level)**
+# **3. User Story Statement**
 
-### **Flow chính**
+Là Chef/Bartender/Manager, tôi muốn KDS nhận OrderItem theo station, sắp xếp hàng đợi ưu tiên, giới hạn số lượng OrderItem đang COOKING, và cập nhật trạng thái (COOKING / READY / REJECTED) realtime để tối ưu vận hành và đồng bộ với FOH.
 
-- **PREPARING → COOKING → READY**
+# **4. Phạm vi trạng thái (State Ownership)**
 
-### **Ngoại lệ**
+## **4.1 Order-level (FOH Owned)**
 
-- **REJECTED:** từ chối khi COOKING do thiếu nguyên liệu/sự cố (bắt buộc lý do).
+KDS **không điều khiển Order-level**.
 
-- **Return:** Manager chuyển **REJECTED → PREPARING** để quay lại hàng đợi.
+Order-level chỉ có:
 
-Note: DRAFT/CANCELLED/COMPLETED thuộc vòng đời tổng thể, nhưng KDS chủ yếu xử lý từ **PREPARING** trở đi.
+SERVING → COMPLETED
 
-## **5. Luồng Người dùng (User Flow)**
+↘
 
-### **5.1. Nhận ticket từ FOH (PREPARING)**
+CANCELLED
 
-- Khi FOH submit, order xuất hiện trên KDS theo station:
-  - **Kitchen Screen:** hiển thị order có ít nhất 1 món thuộc Kitchen
+KDS chỉ:
 
-  - **Bar Screen:** hiển thị order có ít nhất 1 món thuộc Bar
+- Đọc Order-level để hiển thị context
 
-- Mặc định hiển thị theo thứ tự ưu tiên (priority); nếu score bằng nhau → FIFO theo sentAt.
+- Biết Order còn SERVING hay đã CANCELLED
 
-### **5.2. Station routing (Kitchen/Bar)**
+## **4.2 OrderItem-level (BOH Owned)**
 
-- KDS có 2 màn hình/tabs:
-  - **Kitchen (Hot + Cold chung):** hiển thị **chỉ các món kitchen** của order.
+KDS điều khiển:
 
-  - **Bar:** hiển thị **chỉ các món bar** của order.
+PREPARING → COOKING → READY
 
-- **Order-level status** là chung, nhưng mỗi station nhìn “phần món thuộc station”.
+↘
 
-### **5.3. Hàng đợi ưu tiên + realtime cập nhật**
+REJECTED
 
-- KDS tính **Priority Score** để sắp thứ tự order trong PREPARING dựa trên:
-  - Thời gian chờ
+### **Ý nghĩa:**
 
-  - Độ phức tạp (món lâu &gt; món nhanh; số lượng món/qty)
+- PREPARING: đã gửi bếp, đang chờ xử lý
 
-  - VIP
+- COOKING: đang chế biến
 
-  - Khách đặt trước
+- READY: chế biến xong
 
-- Khi FOH sửa order trong PREPARING (thêm món/đổi qty/note/huỷ món):
-  - KDS update realtime nội dung order
+- REJECTED: từ chối do sự cố (bắt buộc lý do)
 
-  - Queue **recalc/reorder** nếu score thay đổi
+# **5. Luồng Người dùng (User Flow)**
 
-Rule quan trọng: FOH **chỉ được update nội dung** khi order còn **PREPARING**. Nếu order đã COOKING → KDS từ chối/ignore cập nhật.
+## **5.1 Nhận ticket từ FOH**
 
-### **5.4. Giới hạn COOKING (WIP limit)**
+### **Trigger**
 
-- Giới hạn tối đa **4 order COOKING cùng lúc (tổng hệ thống)**.
+FOH submit Order (Order.Status = SERVING)
 
-- Khi đủ 4 COOKING → các order khác tiếp tục nằm ở PREPARING.
+### **Backend tạo:**
 
-### **5.5. Auto-pull PREPARING → COOKING**
+OrderItem với Status = PREPARING
 
-- Khi có slot trống (COOKING &lt; 4):
-  - Hệ thống tự động chọn order **đầu hàng đợi** (sau khi sort theo Priority Score, tie-break FIFO)
+### **KDS hiển thị:**
 
-  - Chuyển order từ **PREPARING → COOKING**
+- Chỉ OrderItem PREPARING
 
-  - Đồng bộ trạng thái COOKING về FOH realtime
+- Theo station:
+  - Kitchen: món thuộc Kitchen
 
-### **5.6. COOKING → READY (hoàn tất chế biến)**
+  - Bar: món thuộc Bar
 
-- Kitchen/Bar cập nhật “Done” phần station của mình.
+## **5.2 Station Routing**
 
-- **READY (order-level)** xảy ra khi:
-  - Nếu order chỉ có món Kitchen → Kitchen done thì READY
+KDS có 2 màn hình:
 
-  - Nếu order có cả Kitchen và Bar → chỉ READY khi **cả Kitchen và Bar đều done**
+### **Kitchen Screen**
 
-- Trạng thái READY được đồng bộ realtime về FOH.
+Hiển thị:
 
-### **5.7. REJECTED khi đang COOKING & quay lại PREPARING**
+- OrderItem thuộc Kitchen
 
-- Khi COOKING gặp sự cố/thiếu nguyên liệu:
-  - Chỉ **Manager hoặc Chef-Bar** được chuyển order sang **REJECTED**
+- Status = PREPARING hoặc COOKING
 
-  - Bắt buộc nhập lý do (required)
+### **Bar Screen**
 
-  - Khi REJECTED → **giải phóng slot COOKING**
+Hiển thị:
 
-- Xử lý sau REJECTED:
-  - Trao đổi khách
+- OrderItem thuộc Bar
 
-  - Nếu khách OK tiếp tục:
-    - **Manager chuyển REJECTED → PREPARING**
+- Status = PREPARING hoặc COOKING
 
-    - Order quay lại queue và được recalc priority score
+## **5.3 Priority Queue (Item-level)**
 
-### **5.8. Audit log BOH**
+Queue chỉ áp dụng cho OrderItem PREPARING.
 
-- KDS lưu log: nhận ticket, chuyển trạng thái, auto-pull, ready-by-station, reject (reason), return-to-preparing…
+Priority Score dựa trên:
 
-## **6. Business Rules**
+- Thời gian chờ
 
-- **BR-KDS-01:** KDS nhận ticket khi FOH submit → order vào PREPARING.
+- Độ phức tạp món
 
-- **BR-KDS-02:** Có 2 màn: **Kitchen (Hot+Cold chung)** và **Bar**.
+- Qty
 
-- **BR-KDS-03:** Mỗi màn chỉ hiển thị **món thuộc station** của mình, nhưng status là **order-level**.
+- VIP
 
-- **BR-KDS-04:** Priority score = thời gian chờ + độ phức tạp + VIP + đặt trước.
+- Đặt trước
 
-- **BR-KDS-04a:** Nếu score bằng nhau → FIFO theo sentAt.
+Nếu score bằng nhau → FIFO theo createdAt.
 
-- **BR-KDS-05:** Queue recalc/reorder realtime khi order PREPARING thay đổi.
+## **5.4 FOH Update Rule (Corrected)**
 
-- **BR-KDS-05a:** Nếu order đã COOKING → không nhận update nội dung từ FOH.
+FOH chỉ được update:
 
-- **BR-KDS-06:** WIP limit: tối đa **4 order COOKING** đồng thời (tổng hệ thống).
+- Order.Status = SERVING
 
-- **BR-KDS-07:** Có slot trống → auto-pull order đầu queue vào COOKING.
+- OrderItem.Status = PREPARING
 
-- **BR-KDS-08:** REJECTED chỉ do Manager hoặc Chef-Bar, bắt buộc lý do.
+Nếu OrderItem đã COOKING:\
+→ Backend từ chối update.
 
-- **BR-KDS-08a:** REJECTED giải phóng slot COOKING.
+## **5.5 WIP Limit (Item-level, theo station)**
 
-- **BR-KDS-09:** Manager có quyền REJECTED → PREPARING.
+Ví dụ:
 
-- **BR-KDS-10 (Audit):** Log status changes + actor + timestamp + reason (nếu có).
+- Kitchen: tối đa 4 OrderItem COOKING
 
-## **7. Tiêu chí Chấp nhận (Acceptance Criteria)**
+- Bar: tối đa 4 OrderItem COOKING
 
-**AC-KDS-01: Nhận ticket và hiển thị đúng station**
+Không áp dụng cho Order-level.
 
-- Given: FOH submit order hợp lệ (PREPARING)
+## **5.6 Auto-pull PREPARING → COOKING**
 
-- When: mở KDS Kitchen/Bar
+Khi:
 
-- Then: order xuất hiện realtime ở đúng màn
-  - Kitchen thấy phần món kitchen
+- COOKING &lt; WIP limit
 
-  - Bar thấy phần món bar
+- Có OrderItem PREPARING
 
-**AC-KDS-02: Priority + tie-break FIFO**
+Hệ thống tự động:
 
-- Given: nhiều order PREPARING
+OrderItem: PREPARING → COOKING
 
-- When: KDS sắp xếp hàng đợi
+Đồng bộ realtime về FOH.
 
-- Then: sắp theo priority score; nếu bằng nhau thì theo sentAt (FIFO)
+## **5.7 COOKING → READY**
 
-**AC-KDS-03: FOH sửa PREPARING → KDS update & reorder**
+Chef/Bartender bấm Done:
 
-- Given: order PREPARING đang hiển thị
+OrderItem: COOKING → READY
 
-- When: FOH cập nhật món/qty/note thành công
+FOH thấy món READY.
 
-- Then: KDS cập nhật realtime; nếu score đổi thì reorder, không tạo order mới
+Order-level vẫn = SERVING.
 
-**AC-KDS-04: Không nhận update khi COOKING**
+## **5.8 REJECTED**
 
-- Given: order đã COOKING
+Điều kiện:
 
-- When: FOH gửi update nội dung
+- OrderItem.Status = COOKING
 
-- Then: KDS từ chối/ignore; dữ liệu trên KDS không thay đổi
+- Actor = Manager hoặc Chef-Bar
 
-**AC-KDS-05: WIP limit 4 COOKING**
+- Reason bắt buộc
 
-- Given: đang có 4 order COOKING
+Transition:
 
-- When: có order đến lượt
+OrderItem: COOKING → REJECTED
 
-- Then: order vẫn ở PREPARING, không chuyển COOKING
+Giải phóng slot WIP.
 
-**AC-KDS-06: Auto-pull khi có slot**
+## **5.9 Return REJECTED → PREPARING**
 
-- Given: COOKING &lt; 4 và có queue PREPARING
+Chỉ Manager được làm:
 
-- When: slot trống xuất hiện
+OrderItem: REJECTED → PREPARING
 
-- Then: auto-pull order đầu queue → COOKING, đồng bộ về FOH
+Item quay lại queue và được tính lại priority.
 
-**AC-KDS-07: READY order-level theo điều kiện station**
+## **5.10 Audit Log**
 
-- Given: order COOKING và có món thuộc Kitchen/Bar
+Log các action:
 
-- When: Kitchen done (và Bar done nếu có)
+- Nhận ticket
 
-- Then: order chuyển READY, đồng bộ FOH
+- PREPARING → COOKING
 
-**AC-KDS-08: REJECTED bắt buộc reason và đúng quyền**
+- COOKING → READY
 
-- Given: order COOKING
+- COOKING → REJECTED
 
-- When: chuyển REJECTED
+- REJECTED → PREPARING
 
-- Then: chỉ Manager/Chef-Bar được làm, phải có reason; REJECTED giải phóng slot; đồng bộ FOH
+# **6. Business Rules**
 
-**AC-KDS-09: Manager return REJECTED → PREPARING**
+BR-KDS-01: KDS chỉ xử lý OrderItem, không thay đổi Order-level\
+BR-KDS-02: Station routing theo item.station\
+BR-KDS-03: Queue áp dụng cho PREPARING item\
+BR-KDS-04: WIP limit áp dụng cho OrderItem COOKING theo station\
+BR-KDS-05: COOKING item không được sửa\
+BR-KDS-06: REJECTED bắt buộc reason\
+BR-KDS-07: KDS không tự động COMPLETE Order\
+BR-KDS-08: Tất cả thay đổi phải có audit log
 
-- Given: order REJECTED
+# **7. Acceptance Criteria**
 
-- When: Manager return
+### **AC-01: Nhận ticket đúng station**
 
-- Then: order quay về PREPARING, vào queue, recalc score, đồng bộ FOH
+Given Order SERVING và có OrderItem PREPARING\
+When mở KDS\
+Then item hiển thị đúng station
 
-**AC-KDS-10: Audit log**
+### **AC-02: Priority + FIFO**
 
-- Given: có thao tác status/auto-pull/reject/return
+Given nhiều OrderItem PREPARING\
+When sắp xếp\
+Then theo priority; nếu bằng nhau → FIFO
 
-- When: Manager xem log
+### **AC-03: WIP limit**
 
-- Then: thấy actor/timestamp/action/reason (nếu có) đúng lịch sử
+Given Kitchen có 4 item COOKING\
+When có PREPARING\
+Then không auto-pull thêm
+
+### **AC-04: Auto-pull**
+
+Given slot trống\
+When có item PREPARING\
+Then item đầu queue → COOKING
+
+### **AC-05: READY**
+
+Given item COOKING\
+When bấm Done\
+Then item → READY\
+And Order vẫn SERVING
+
+### **AC-06: Reject**
+
+Given item COOKING\
+When reject\
+Then item → REJECTED\
+And reason được lưu
+
+### **AC-07: Return**
+
+Given item REJECTED\
+When Manager return\
+Then item → PREPARING\
+And recalc queue
+
+### **AC-08: Audit log**
+
+Given có thao tác trạng thái\
+When Manager xem log\
+Then hiển thị đúng actor / timestamp / action / reason
