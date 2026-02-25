@@ -1,0 +1,146 @@
+# Guardian Scoring Rubric v1.0
+
+## Mục đích
+
+Tài liệu này định nghĩa cách tính điểm Compliance, các ngưỡng pass/fail, và action tương ứng với từng mức severity. Đây là **nguồn sự thật duy nhất** cho scoring trong hệ thống FoodHub Guardian.
+
+---
+
+## Pass/Fail Thresholds
+
+| Score     | Status               | Action                                        |
+| --------- | -------------------- | --------------------------------------------- |
+| ≥ 80/100  | ✅ **COMPLIANT**     | Có thể merge sau review thông thường          |
+| 60–79/100 | ⚠️ **NEEDS WORK**    | Cần fix HIGH violations trước merge           |
+| < 60/100  | ❌ **NON-COMPLIANT** | Block merge — cần fix toàn bộ CRITICAL + HIGH |
+
+---
+
+## Severity → Action Mapping
+
+| Severity   | Màu | Định nghĩa                                                       | Action bắt buộc                                 |
+| ---------- | --- | ---------------------------------------------------------------- | ----------------------------------------------- |
+| `CRITICAL` | 🔴  | Vi phạm ảnh hưởng production an toàn, bảo mật, và data integrity | **Block merge ngay.** Fix trước khi review tiếp |
+| `HIGH`     | 🟠  | Vi phạm ảnh hưởng quality và maintainability nghiêm trọng        | **Required fix** trước khi merge                |
+| `MEDIUM`   | 🟡  | Vi phạm ảnh hưởng code quality, không block production ngay      | Fix trong sprint hiện tại                       |
+| `LOW`      | 🟢  | Style, naming, non-critical convention                           | Track trong backlog, không block                |
+
+---
+
+## Per-Skill Scoring Rubrics
+
+### FFA-FLW (Flow Analyzer) — 100 điểm
+
+| Rule                            | Max | Severity nếu = 0 | Điều kiện đạt điểm tối đa                      |
+| ------------------------------- | --- | ---------------- | ---------------------------------------------- |
+| R1: Validation ở đầu            | 25  | CRITICAL         | FluentValidation được gọi trước mọi logic khác |
+| R2: Log Start + End             | 20  | HIGH             | Có cả log đầu và log cuối Handler              |
+| R3: Transaction wrapper         | 25  | CRITICAL         | Tất cả multi-write trong Begin/Commit/Rollback |
+| R4: Business logic trong Entity | 15  | HIGH             | Handler không gán property Entity trực tiếp    |
+| R5: Mapping/Return tách biệt    | 15  | MEDIUM           | Mapping nằm ở bước cuối, sau save/commit       |
+
+### FFA-TXG (Transaction Guard) — 100 điểm
+
+| Rule                                  | Max | Severity nếu = 0 | Điều kiện đạt điểm tối đa                       |
+| ------------------------------------- | --- | ---------------- | ----------------------------------------------- |
+| TX-1: IUnitOfWork                     | 25  | CRITICAL         | Dùng IUnitOfWork, không gọi DbContext trực tiếp |
+| TX-2: BeginTransactionAsync           | 25  | CRITICAL         | Có BeginTransactionAsync trước write đầu tiên   |
+| TX-3: CommitTransactionAsync          | 20  | HIGH             | Có Commit sau khi tất cả write thành công       |
+| TX-4: RollbackTransactionAsync        | 20  | CRITICAL         | Có Rollback trong catch block                   |
+| TX-5: External call ngoài transaction | 10  | MEDIUM           | Email/API call không bọc trong transaction      |
+
+### FFA-LOG (Logging Compliance) — 100 điểm
+
+| Rule                        | Max | Severity nếu = 0 | Điều kiện đạt điểm tối đa                 |
+| --------------------------- | --- | ---------------- | ----------------------------------------- |
+| LOG-1: Log Start            | 25  | HIGH             | LogInformation ở đầu Handle method        |
+| LOG-2: Log End/Success      | 25  | HIGH             | LogInformation khi hoàn thành thành công  |
+| LOG-3: No sensitive data    | 30  | CRITICAL         | Không có password/token/secret trong log  |
+| LOG-4: Structured logging   | 15  | MEDIUM           | Dùng placeholder {} thay vì string concat |
+| LOG-5: Error log on failure | 5   | MEDIUM           | LogWarning/LogError khi exception/failure |
+
+### FFA-CAG (Clean Architecture Guard) — 100 điểm
+
+| Rule                                 | Max | Severity nếu = 0 | Điều kiện đạt điểm tối đa                                |
+| ------------------------------------ | --- | ---------------- | -------------------------------------------------------- |
+| CAG-1: Handler chỉ orchestrate       | 30  | CRITICAL         | Không có direct property assignment trong Handler        |
+| CAG-2: State change trong Entity     | 30  | CRITICAL         | Entity có method cho mọi state change                    |
+| CAG-3: Domain không depend App/Infra | 20  | CRITICAL         | Domain namespace không import Application/Infrastructure |
+| CAG-4: Factory/Constructor pattern   | 10  | MEDIUM           | Entity có rõ ràng factory method hoặc constructor        |
+| CAG-5: Value Objects                 | 10  | LOW              | Dùng VO cho concepts có validation (Email, Money)        |
+
+### FFA-CTL (Controller Standard) — 100 điểm
+
+| Rule                                      | Max | Severity nếu = 0 | Điều kiện đạt điểm tối đa                           |
+| ----------------------------------------- | --- | ---------------- | --------------------------------------------------- |
+| CTL-1: Kế thừa ApiControllerBase          | 20  | HIGH             | `class XController : ApiControllerBase`             |
+| CTL-2: Inject IMediator only              | 25  | CRITICAL         | Không inject Repository/Service trực tiếp           |
+| CTL-3: Không có business if/else          | 25  | CRITICAL         | Action method chỉ gọi Mediator.Send()               |
+| CTL-4: HandleResult cho response          | 20  | HIGH             | Dùng HandleResult(result) thay vì Ok()/BadRequest() |
+| CTL-5: [Authorize] + ProducesResponseType | 10  | MEDIUM           | Attribute đầy đủ cho bảo mật và Swagger             |
+
+### FFA-ACV (API Contract Validator) — 100 điểm
+
+| Rule                                        | Max | Severity nếu = 0 | Điều kiện đạt điểm tối đa                    |
+| ------------------------------------------- | --- | ---------------- | -------------------------------------------- |
+| ACV-1: FluentValidation cho required fields | 30  | CRITICAL         | Mọi required field có RuleFor                |
+| ACV-2: MaximumLength cho string             | 20  | HIGH             | Mọi string field có .MaximumLength()         |
+| ACV-3: Proper Type                          | 20  | HIGH             | Guid/Enum/decimal thay vì string/int/double  |
+| ACV-4: XML Documentation                    | 15  | MEDIUM           | /// <summary> cho class và public properties |
+| ACV-5: Response không expose internals      | 15  | MEDIUM           | Không trả PasswordHash, Token trong response |
+
+### FFA-SEC (Security Validation) — 100 điểm
+
+| Rule                              | Max | Severity nếu = 0 | Điều kiện đạt điểm tối đa                               |
+| --------------------------------- | --- | ---------------- | ------------------------------------------------------- |
+| SEC-1: [Authorize] attribute      | 30  | CRITICAL         | Mọi endpoint cần bảo vệ có [Authorize]                  |
+| SEC-2: Clean response DTO         | 25  | CRITICAL         | Response không trả password/token/secret                |
+| SEC-3: CSRF protection            | 20  | HIGH             | Endpoint mutate state có CSRF protection (Cookie auth)  |
+| SEC-4: Fine-grained authorization | 15  | HIGH             | Ownership check trong Handler cho resource-level access |
+| SEC-5: No stack trace in response | 10  | HIGH             | Exception middleware xử lý, không trả detail ra ngoài   |
+
+### FFA-PERF (Performance Risk) — 100 điểm
+
+| Rule                               | Max | Severity nếu = 0 | Điều kiện đạt điểm tối đa                         |
+| ---------------------------------- | --- | ---------------- | ------------------------------------------------- |
+| PERF-1: Pagination trên list query | 30  | CRITICAL         | Có Skip+Take hoặc Cursor — không ToListAsync() mở |
+| PERF-2: AsNoTracking trên read     | 25  | HIGH             | Read-only query có .AsNoTracking()                |
+| PERF-3: Không có N+1               | 25  | HIGH             | Không có DB call trong foreach/loop               |
+| PERF-4: Projection .Select()       | 10  | MEDIUM           | Dùng .Select() thay vì load toàn Entity           |
+| PERF-5: Không SELECT \*            | 10  | MEDIUM           | Chỉ lấy columns cần thiết                         |
+
+---
+
+## FGO Overall Score Formula
+
+```
+Command Handler:
+  Overall = (FLW_score × 0.30) + (TXG_score × 0.30) + (LOG_score × 0.20) + (CAG_score × 0.20)
+
+Query Handler:
+  Overall = (FLW_score × 0.30) + (LOG_score × 0.20) + (PERF_score × 0.25) + (CAG_score × 0.25)
+
+Controller:
+  Overall = (CTL_score × 0.40) + (SEC_score × 0.35) + (ACV_score × 0.25)
+
+Mixed/PR:
+  Overall = Average(all applicable file scores)
+```
+
+---
+
+## Ví dụ Score Calculation
+
+**Ví dụ: CreateOrderHandler (Command)**
+
+| Skill       | Raw Score | Weight | Weighted                 |
+| ----------- | --------- | ------ | ------------------------ |
+| FFA-FLW     | 85/100    | 30%    | 25.5                     |
+| FFA-TXG     | 100/100   | 30%    | 30.0                     |
+| FFA-LOG     | 70/100    | 20%    | 14.0                     |
+| FFA-CAG     | 90/100    | 20%    | 18.0                     |
+| **Overall** |           |        | **87.5% → ✅ COMPLIANT** |
+
+---
+
+_Rubric version 1.0 — FoodHub Guardian System. Cập nhật khi có skill version mới._
