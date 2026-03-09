@@ -40,31 +40,20 @@ Là **Manager/Cashier**, tôi muốn xem các báo cáo doanh thu và món bán 
 
 **4. Luồng Báo Cáo (Report Flows)**
 
-**4.1. Báo cáo Doanh thu theo Ca (Shift Report)**
-
-- Tổng doanh thu ca
-- Doanh thu theo phương thức thanh toán
-- Tiền tip
-- Số lượng đơn
-- Đơn hủy / giảm giá
-- Tiền mặt đầu ca & cuối ca
-
-==&gt; Phục vụ: **chốt ca & đối soát tiền mặt**
-
-**4.2. Báo cáo Doanh thu theo Ngày (Daily Report)**
+**4.1. Báo cáo Doanh thu theo Ngày (Daily Report)**
 
 - Tổng doanh thu ngày
 - Tổng số đơn
 - Doanh thu theo từng ca
 - So sánh với mục tiêu ngày
 
-**4.3. Báo cáo Doanh thu theo Tháng (Monthly Report)**
+**4.2. Báo cáo Doanh thu theo Tháng (Monthly Report)**
 
 - Tổng doanh thu tháng
 - So sánh tháng trước / cùng kỳ
 - Tỷ lệ tăng trưởng
 
-**4.4. Báo cáo Món Bán Chạy (Best Sellers)**
+**4.3. Báo cáo Món Bán Chạy (Best Sellers)**
 
 - Tên món
 - Số lượng bán ra
