@@ -7,13 +7,13 @@
 Hệ thống POS cần module Báo cáo để:
 
 - Theo dõi **tổng doanh thu**
-- Xem báo cáo theo **ca / ngày / tháng**
+- Xem báo cáo theo **ngày / tháng**
 - Phân tích **món bán chạy (Best Sellers)**
-- Hỗ trợ chốt ca và ra quyết định kinh doanh
+- Hỗ trợ chốt và ra quyết định kinh doanh
 
 **Pain Points**
 
-- Khó đối soát tiền mặt khi chốt ca
+- Khó đối soát tiền mặt khi chốt ngày
 - Thiếu báo cáo tổng hợp theo thời gian
 - Chưa khai thác dữ liệu món bán chạy hiệu quả
 
@@ -28,8 +28,8 @@ Hệ thống POS cần module Báo cáo để:
 **Primary Actors**
 
 - **Thu ngân (Cashier)**
-  - Xem báo cáo theo ca
-  - Chốt ca
+  - Xem báo cáo theo ngày
+  - Chốt ngày
 - **Quản lý (Manager)**
   - Xem toàn bộ báo cáo
   - Phân tích doanh thu & best sellers
@@ -44,7 +44,6 @@ Là **Manager/Cashier**, tôi muốn xem các báo cáo doanh thu và món bán 
 
 - Tổng doanh thu ngày
 - Tổng số đơn
-- Doanh thu theo từng ca
 - So sánh với mục tiêu ngày
 
 **4.2. Báo cáo Doanh thu theo Tháng (Monthly Report)**
@@ -64,7 +63,7 @@ Là **Manager/Cashier**, tôi muốn xem các báo cáo doanh thu và món bán 
 
 **5. Tiêu chí Chấp nhận (Acceptance Criteria)**
 
-- **AC-R01:** Cashier chỉ xem báo cáo ca
+- **AC-R01:** Cashier chỉ xem báo cáo ngày
 - **AC-R02:** Manager xem đầy đủ báo cáo
-- **AC-R03:** Báo cáo ca/ngày/tháng hiển thị đúng doanh thu
+- **AC-R03:** Báo cáo ngày/tháng hiển thị đúng doanh thu
 - **AC-R04:** Best Sellers thống kê chính xác theo thời gian
