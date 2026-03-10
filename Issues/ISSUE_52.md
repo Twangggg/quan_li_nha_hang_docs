@@ -74,7 +74,43 @@ Là **Manager/Cashier**, tôi muốn xem các báo cáo doanh thu và món bán 
 - **Tỷ trọng doanh thu (%)**\
   Tỷ lệ doanh thu của danh mục so với tổng doanh thu
 
-- **Số lượng món trong danh mục được bán** _(optional)_
+- **Số lượng món trong danh mục được bán** *(optional)*
+
+## **4.5. Xuất Báo Cáo Doanh Thu ra Excel (Export Revenue Report)**
+
+Hệ thống cho phép **Manager/Cashier xuất báo cáo doanh thu ra file Excel** để phục vụ lưu trữ, đối soát và phân tích dữ liệu.
+
+### **Thông tin trong file Excel**
+
+File Excel có thể bao gồm:
+
+- **Thời gian báo cáo** (Ngày / Tháng / Khoảng thời gian)
+
+- **Tổng doanh thu**
+
+- **Tổng số đơn**
+
+- **Danh sách món bán**
+
+  - Tên món
+
+  - Danh mục
+
+  - Số lượng bán
+
+  - Doanh thu theo món
+
+- **Tổng doanh thu theo danh mục**
+
+### **Tùy chọn xuất báo cáo**
+
+Người dùng có thể chọn:
+
+- **Xuất theo ngày**
+
+- **Xuất theo tháng**
+
+- **Xuất theo khoảng thời gian tùy chọn**
 
 **Bộ lọc (Filters)**
 
@@ -84,9 +120,15 @@ Là **Manager/Cashier**, tôi muốn xem các báo cáo doanh thu và món bán 
 
 - Theo **khoảng thời gian tùy chọn**
 
+### **Định dạng file**
+
+- File được xuất dưới dạng **.xlsx**
+
 **5. Tiêu chí Chấp nhận (Acceptance Criteria)**
 
 - **AC-R01:** Cashier chỉ xem báo cáo ngày
 - **AC-R02:** Manager xem đầy đủ báo cáo
 - **AC-R03:** Báo cáo ngày/tháng hiển thị đúng doanh thu
 - **AC-R04:** Best Sellers thống kê chính xác theo thời gian
+- **AC-R05:** Người dùng có thể xuất báo cáo ra file **Excel (.xlsx)**
+- **AC-R06:** Hỗ trợ xuất theo ngày, tháng hoặc khoảng thời gian tùy chọn
