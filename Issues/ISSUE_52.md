@@ -61,6 +61,29 @@ Là **Manager/Cashier**, tôi muốn xem các báo cáo doanh thu và món bán 
 - Lợi nhuận gộp (nếu có)
 - Lọc theo ngày / tháng
 
+**4.4. Báo cáo Doanh thu theo Danh mục**
+
+**Thông tin hiển thị**
+
+- **Tên danh mục (Category)**\
+  Ví dụ: Món chính, Món khai vị, Đồ uống, Tráng miệng
+
+- **Tổng doanh thu theo danh mục**\
+  Tổng tiền thu được từ các món thuộc danh mục
+
+- **Tỷ trọng doanh thu (%)**\
+  Tỷ lệ doanh thu của danh mục so với tổng doanh thu
+
+- **Số lượng món trong danh mục được bán** _(optional)_
+
+**Bộ lọc (Filters)**
+
+- Theo **ngày**
+
+- Theo **tháng**
+
+- Theo **khoảng thời gian tùy chọn**
+
 **5. Tiêu chí Chấp nhận (Acceptance Criteria)**
 
 - **AC-R01:** Cashier chỉ xem báo cáo ngày
