@@ -13,7 +13,7 @@ Hệ thống này thay thế cho phân quyền dựa trên Role truyền thống
 
 ### B. IPermissionProvider & PermissionProvider
 
-Ánh xạ các `EmployeeRole` (Manager, Waiter, Cashier...) sang tập hợp các `Permission` tương ứng.
+Ánh xạ các `EmployeeRole` (Manager, ChefBar, Cashier...) sang tập hợp các `Permission` tương ứng.
 
 - **Vị trí**: `FoodHub.Infrastructure/Security/PermissionProvider.cs`
 
